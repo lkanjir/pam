@@ -13,78 +13,34 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       APP_DB_USER: ${APP_DB_USER}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD}
-    
+
     healthcheck:
       test: ["CMD-SHELL", 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 5s
       timeout: 5s
       retries: 5
       start_period: 30s
-    
+
     restart: unless-stopped
 
     volumes:
       - postgres_data:/var/lib/postgresql
       - ./postgres/01-create-app-user.sh:/docker-entrypoint-initdb.d/01-create-app-user.sh:ro
-    
-    networks:
-      - db-network
-
-  pgbouncer:
-    image: edoburu/pgbouncer:v1.26.0-p0
-
-    ports:
-      - "127.0.0.1:${PGBOUNCER_PORT:-6432}:6432"
-
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${POSTGRES_DB}
-      DB_USER: ${APP_DB_USER}
-      DB_PASSWORD: ${APP_DB_PASSWORD}
-
-      LISTEN_PORT: 6432
-      AUTH_TYPE: scram-sha-256
-
-      POOL_MODE: transaction
-      MAX_CLIENT_CONN: 100
-      DEFAULT_POOL_SIZE: 20
-
-    networks:
-      - db-network
-      - app-network
-    
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-    healthcheck:
-      test: 
-        [
-          "CMD-SHELL", 
-          'PGPASSWORD="$$DB_PASSWORD" psql -h 127.0.0.1 -p "$$LISTEN_PORT" -U "$$DB_USER" -d "$$DB_NAME" -c "SELECT 1" >/dev/null'
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-    restart: unless-stopped
 
   redis:
     image: redis:8.8.3-alpine
-    command: 
+    command:
       [
         "redis-server",
-        "--requirepass", 
+        "--requirepass",
         "${REDIS_PASSWORD}"
       ]
-    
+
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
-    
+
     healthcheck:
-      test: 
+      test:
         [
           "CMD-SHELL",
           'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG'
@@ -93,9 +49,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    
-    networks:
-      - app-network
 
     restart: unless-stopped
 
@@ -117,11 +70,11 @@ services:
 
     ports:
       - "127.0.0.1:8080:8080"
-    
+
     depends_on:
       keycloak-postgres:
         condition: service_healthy
-    
+
     healthcheck:
       test:
         - CMD-SHELL
@@ -134,20 +87,16 @@ services:
       retries: 20
       start_period: 30s
 
-    networks:
-      - app-network
-      - keycloak-db-network
-
     restart: unless-stopped
 
   keycloak-postgres:
     image: postgres:18
-    
+
     environment:
       POSTGRES_DB: ${KEYCLOAK_DB}
       POSTGRES_USER: ${KEYCLOAK_DB_USER}
       POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
-    
+
     volumes:
       - keycloak_data:/var/lib/postgresql
 
@@ -158,9 +107,6 @@ services:
       retries: 5
       start_period: 30s
 
-    networks:
-      - keycloak-db-network
-
     restart: unless-stopped
 
   vault:
@@ -168,14 +114,14 @@ services:
 
     cap_add:
       - IPC_LOCK
-    
+
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
       VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
 
     ports:
       - "127.0.0.1:8200:8200"
-    
+
     healthcheck:
       test:
         [
@@ -187,35 +133,55 @@ services:
       retries: 10
       start_period: 10s
 
-    networks:
-      - app-network
-
     restart: unless-stopped
-      
+
+  migrator:
+    build:
+      context: ../src/Backend
+      dockerfile: Dockerfile
+      target: migrator
+    environment:
+      DB_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      APP_DB_USER: ${APP_DB_USER}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   api:
     build:
       context: ../src/Backend
       dockerfile: Dockerfile
+      target: final
+
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
-      Database__ConnectionString: "Host=pgbouncer;Port=6432;Database=${POSTGRES_DB};Username=${APP_DB_USER};Password=${APP_DB_PASSWORD};Pooling=true;SSL Mode=Disable"
+      Database__ConnectionString: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${APP_DB_USER};Password=${APP_DB_PASSWORD};Pooling=true;SSL Mode=Disable"
       Redis__ConnectionString: "redis:6379,password=${REDIS_PASSWORD}"
 
     ports:
       - "127.0.0.1:${API_PORT:-8090}:8080"
 
     healthcheck:
-      test: 
+      test:
         [
-          "CMD", 
-          "curl", 
-          "--fail", 
-          "--silent", 
-          "--show-error", 
-          "--max-time", 
-          "3", 
+          "CMD",
+          "curl",
+          "--fail",
+          "--silent",
+          "--show-error",
+          "--max-time",
+          "3",
           "http://127.0.0.1:8080/health/ready"
         ]
       interval: 10s
@@ -223,23 +189,8 @@ services:
       retries: 3
       start_period: 15s
 
-    networks:
-      - app-network
-
     restart: unless-stopped
 
 volumes:
   postgres_data:
   keycloak_data:
-
-networks:
-  db-network:
-    driver: bridge
-    internal: true
-  
-  app-network:
-    driver: bridge
-
-  keycloak-db-network:
-    driver: bridge
-    internal: true

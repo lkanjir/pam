@@ -8,6 +8,8 @@ COPY Domain/Domain.csproj Domain/
 COPY Infrastructure/Infrastructure.csproj Infrastructure/
 
 RUN dotnet restore Api/Api.csproj
+COPY Migrator/Migrator.csproj Migrator/
+RUN dotnet restore Migrator/Migrator.csproj
 
 COPY . .
 RUN dotnet publish Api/Api.csproj \
@@ -15,6 +17,16 @@ RUN dotnet publish Api/Api.csproj \
     --no-restore \
     -o /app/publish \
     /p:UseAppHost=false
+
+FROM build AS migrator-build
+RUN dotnet publish Migrator/Migrator.csproj -c Release --no-restore \
+    -o /app/migrator /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS migrator
+WORKDIR /app
+COPY --from=migrator-build /app/migrator .
+USER $APP_UID
+ENTRYPOINT ["dotnet", "Migrator.dll"]
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
