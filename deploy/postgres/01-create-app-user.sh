@@ -26,7 +26,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE :"migration_user" IN SCHEMA public
 ALTER DEFAULT PRIVILEGES FOR ROLE :"migration_user" IN SCHEMA public
     GRANT USAGE, SELECT ON SEQUENCES TO :"app_user";
 
--- The migration script restricts audit and migration-history access after
+-- The migrator restricts audit and migration-history access after
 -- creating those tables.
 
 EOSQL
