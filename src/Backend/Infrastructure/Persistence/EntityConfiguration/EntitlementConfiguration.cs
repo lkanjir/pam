@@ -9,6 +9,7 @@ public sealed class EntitlementConfiguration : IEntityTypeConfiguration<Entitlem
     public void Configure(EntityTypeBuilder<Entitlement> builder)
     {
         builder.ToTable("entitlements");
+        builder.ToTable(t => t.HasCheckConstraint("ck_entitlements_max_duration_minutes", "max_duration_minutes > 0"));
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.Id).UseIdentityByDefaultColumn();

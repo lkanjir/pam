@@ -7,5 +7,5 @@ public sealed class PamRoleAssignment
     public long PrincipalId { get; init; }
     public int RoleId { get; init; }
     public DateTime AssignedAt { get; init; }
-    public long? AssignedByPrincipalId { get; init; }
+    public long AssignedByPrincipalId { get; init; }
 }

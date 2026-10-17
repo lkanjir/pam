@@ -22,7 +22,7 @@ public sealed class AccessRequestConfiguration : IEntityTypeConfiguration<Access
         builder.HasIndex(e => new { e.RequesterPrincipalId, e.IdempotencyKey }).IsUnique();
 
         // CHECK: RequestedDurationMinutes > 0
-        builder.ToTable(t => t.HasCheckConstraint("CK_AccessRequest_RequestedDurationMinutes", "requested_duration_minutes > 0"));
+        builder.ToTable(t => t.HasCheckConstraint("ck_access_requests_requested_duration_minutes", "requested_duration_minutes > 0"));
 
         builder.HasOne<Principal>()
                .WithMany()

@@ -10,7 +10,7 @@ public sealed class ManagedResource
     public string Environment { get; init; } = string.Empty;
     public bool IsActive { get; init; }
     public DateTime CreatedAt { get; init; }
-    public long? CreatedByPrincipalId { get; init; }
+    public long CreatedByPrincipalId { get; init; }
     public DateTime ModifiedAt { get; init; }
-    public long? ModifiedByPrincipalId { get; init; }
+    public long ModifiedByPrincipalId { get; init; }
 }
