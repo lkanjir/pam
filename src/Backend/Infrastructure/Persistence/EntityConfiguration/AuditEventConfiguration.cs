@@ -19,6 +19,11 @@ public sealed class AuditEventConfiguration : IEntityTypeConfiguration<AuditEven
         builder.Property(e => e.Source).IsRequired();
         builder.Property(e => e.SchemaVersion).HasDefaultValue(1);
         builder.Property(e => e.OccurredAt).HasDefaultValueSql("now()");
+        builder.Property(e => e.ActorSnapshot).HasColumnType("jsonb");
+        builder.Property(e => e.SubjectSnapshot).HasColumnType("jsonb");
+        builder.Property(e => e.ResourceSnapshot).HasColumnType("jsonb");
+        builder.Property(e => e.EntitlementSnapshot).HasColumnType("jsonb");
+        builder.Property(e => e.Metadata).HasColumnType("jsonb");
 
         builder.HasIndex(e => e.PublicId).IsUnique();
 

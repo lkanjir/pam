@@ -19,7 +19,7 @@ public static class ServiceCollectionExtensions
         services.AddDbContextPool<PamDbContext>((serviceProvider, options) =>
         {
             var databaseOptions = serviceProvider.GetRequiredService<IOptions<DatabaseOptions>>().Value;
-            options.UseNpgsql(databaseOptions.ConnectionString);
+            options.UseNpgsql(databaseOptions.ConnectionString).UseSnakeCaseNamingConvention();
         });
 
         services.AddHealthChecks().AddDbContextCheck<PamDbContext>(name: "database", tags: ["ready"]);
@@ -29,7 +29,7 @@ public static class ServiceCollectionExtensions
 
             databaseCheck.Timeout = TimeSpan.FromSeconds(1);
         });
-        
+
         services.AddOptions<RedisOptions>().Bind(configuration.GetSection(RedisOptions.SectionName))
             .Validate(options => !string.IsNullOrWhiteSpace(options.ConnectionString),
                 "Redis:Connection string is required").ValidateOnStart();

@@ -15,6 +15,7 @@ public sealed class AuthenticationSessionLedgerConfiguration : IEntityTypeConfig
         builder.Property(e => e.PublicId).HasDefaultValueSql("gen_random_uuid()");
         builder.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
         builder.Property(e => e.UserAgent).HasMaxLength(2048);
+        builder.Property(e => e.ClientIpAddress).HasColumnType("inet");
 
         builder.HasIndex(e => e.PublicId).IsUnique();
         builder.HasIndex(e => e.SessionIdHash).IsUnique();

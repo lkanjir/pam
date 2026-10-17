@@ -16,6 +16,7 @@ public sealed class PolicyEvaluationConfiguration : IEntityTypeConfiguration<Pol
         builder.Property(e => e.PolicyCode).IsRequired();
         builder.Property(e => e.Decision).IsRequired();
         builder.Property(e => e.EvaluatedAt).HasDefaultValueSql("now()");
+        builder.Property(e => e.InputSnapshot).HasColumnType("jsonb");
 
         builder.HasIndex(e => e.PublicId).IsUnique();
         builder.HasIndex(e => e.RequestId).IsUnique();
@@ -23,6 +24,6 @@ public sealed class PolicyEvaluationConfiguration : IEntityTypeConfiguration<Pol
         builder.HasOne<AccessRequest>()
                .WithMany()
                .HasForeignKey(e => e.RequestId)
-               .OnDelete(DeleteBehavior.Cascade);
+               .OnDelete(DeleteBehavior.Restrict);
     }
 }
