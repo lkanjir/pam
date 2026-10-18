@@ -23,6 +23,8 @@ app.UseAuthorization();
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 
+app.MapAuthenticationEndpoints();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();

@@ -1,5 +1,8 @@
 using Api.Configuration;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
 namespace Api;
 
@@ -33,7 +36,7 @@ public static class ServiceCollectionExtensions
             options.DefaultSignOutScheme = CookieAuthenticationDefaults.AuthenticationScheme;
             options.DefaultForbidScheme = CookieAuthenticationDefaults.AuthenticationScheme;
 
-            options.DefaultChallengeScheme = "oidc";
+            options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
         }).AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
         {
             options.Cookie.Name = "pam.session";
@@ -55,7 +58,7 @@ public static class ServiceCollectionExtensions
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return Task.CompletedTask;
             };
-        });
+        }).AddOpenIdConnect("oidc", _ => { });
 
         services.AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
             .Configure<ITicketStore>((
@@ -65,8 +68,45 @@ public static class ServiceCollectionExtensions
             });
 
         services.AddAuthorization();
-        
-        
+
+        services.AddOptions<OpenIdConnectOptions>("oidc").Configure<IOptions<KeycloakOptions>>((options,
+            keycloakOptions) =>
+        {
+            var keycloak = keycloakOptions.Value;
+
+            options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+            options.Authority = keycloak.Authority;
+            options.MetadataAddress = keycloak.MetadataAddress;
+            options.ClientId = keycloak.ClientId;
+            options.ClientSecret = keycloak.ClientSecret;
+
+            options.ResponseType = OpenIdConnectResponseType.Code;
+            options.ResponseMode = OpenIdConnectResponseMode.Query;
+            options.UsePkce = true;
+            
+            options.CallbackPath = "/signin-oidc";
+            options.Scope.Clear();
+            options.Scope.Add("openid");
+            options.Scope.Add("profile");
+            options.Scope.Add("email");
+
+            options.SaveTokens = false;
+            options.MapInboundClaims = false;
+
+            options.TokenValidationParameters.NameClaimType = "name";
+            options.TokenValidationParameters.RoleClaimType = "pam_role";
+
+            options.RequireHttpsMetadata = !environment.IsDevelopment();
+
+            if (environment.IsDevelopment())
+            {
+                options.CorrelationCookie.SameSite = SameSiteMode.Lax;
+                options.CorrelationCookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+                options.NonceCookie.SameSite = SameSiteMode.Lax;
+                options.NonceCookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+            }
+        });
+
         return services;
     }
 }
