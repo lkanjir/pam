@@ -67,6 +67,8 @@ services:
       KC_METRICS_ENABLED: "true"
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_HOSTNAME: "http://localhost:8080"
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
 
     volumes:
       - ./keycloak/:/opt/keycloak/data/import:ro
@@ -171,6 +173,8 @@ services:
       ASPNETCORE_HTTP_PORTS: "8080"
       Database__ConnectionString: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${APP_DB_USER};Password=${APP_DB_PASSWORD};Pooling=true;SSL Mode=Disable"
       Redis__ConnectionString: "redis:6379,password=${REDIS_PASSWORD}"
+      Keycloak__ClientSecret: ${KEYCLOAK_CLIENT_SECRET}
+      Keycloak__MetadataAddress: "http://keycloak:8080/realms/pam/.well-known/openid-configuration"
 
     ports:
       - "127.0.0.1:${API_PORT:-8090}:8080"
