@@ -1,10 +1,11 @@
+using Api;
 using Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddInfrastructure(builder.Configuration);
-
+builder.Services.AddKeycloak(builder.Configuration);
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
