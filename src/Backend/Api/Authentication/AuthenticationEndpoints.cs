@@ -1,5 +1,7 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 namespace Api.Authentication;
 
@@ -7,12 +9,26 @@ public static class AuthenticationEndpoints
 {
     public static IEndpointRouteBuilder MapAuthenticationEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/api/auth/login", () => Results.Challenge(
+        endpoints.MapGet("/auth/login", () => Results.Challenge(
             properties: new AuthenticationProperties { RedirectUri = "/api/me" },
             authenticationSchemes: ["oidc"])).AllowAnonymous();
 
-        endpoints.MapGet("/api/me", GetCurrentUser).RequireAuthorization();
+        endpoints.MapGet("/me", GetCurrentUser);
 
+        endpoints.MapGet("/auth/antiforgery", (HttpContext context, IAntiforgery antiforgery) =>
+        {
+            var tokens = antiforgery.GetAndStoreTokens(context);
+            return TypedResults.Ok(new AntiforgeryTokenResponse(tokens.RequestToken!));
+        });
+
+        endpoints.MapPost("/auth/logout", async (HttpContext context) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+
+            await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            return TypedResults.NoContent();
+        });
+        
         return endpoints;
     }
 
