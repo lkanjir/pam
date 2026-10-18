@@ -1,3 +1,4 @@
+using Api.Authentication;
 using Api.Configuration;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -95,6 +96,7 @@ public static class ServiceCollectionExtensions
 
             options.TokenValidationParameters.NameClaimType = "name";
             options.TokenValidationParameters.RoleClaimType = "pam_role";
+            options.EventsType = typeof(PamOpenIdConnectEvents);
 
             options.RequireHttpsMetadata = !environment.IsDevelopment();
 
@@ -107,6 +109,8 @@ public static class ServiceCollectionExtensions
             }
         });
 
+        services.AddScoped<PamOpenIdConnectEvents>();
+        
         return services;
     }
 }
