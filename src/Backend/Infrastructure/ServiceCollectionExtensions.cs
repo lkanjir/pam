@@ -1,3 +1,4 @@
+using Application.Identity;
 using Infrastructure.Persistence;
 using Infrastructure.Sessions;
 using Microsoft.AspNetCore.DataProtection;
@@ -68,6 +69,8 @@ public static class ServiceCollectionExtensions
             options.XmlRepository = new RedisXmlRepository(() => redis.GetDatabase(), "pam:data-protection:keys");
         });
 
+        services.AddScoped<IPrincipalIdentityReader, IPrincipalIdentityReader>();
+        
         return services;
     }
 }
