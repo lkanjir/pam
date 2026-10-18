@@ -12,7 +12,7 @@ public sealed class AuthenticationSessionLedgerConfiguration : IEntityTypeConfig
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.Id).UseIdentityByDefaultColumn();
-        builder.Property(e => e.PublicId).HasDefaultValueSql("gen_random_uuid()");
+        builder.Property(e => e.PublicId).HasDefaultValueSql("uuidv7()");
         builder.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
         builder.Property(e => e.UserAgent).HasMaxLength(2048);
         builder.Property(e => e.ClientIpAddress).HasColumnType("inet");

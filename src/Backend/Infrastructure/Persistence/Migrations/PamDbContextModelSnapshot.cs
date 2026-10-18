@@ -60,7 +60,7 @@ namespace Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("public_id")
-                        .HasDefaultValueSql("gen_random_uuid()");
+                        .HasDefaultValueSql("uuidv7()");
 
                     b.Property<int>("RequestedDurationMinutes")
                         .HasColumnType("integer")
@@ -161,7 +161,7 @@ namespace Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("public_id")
-                        .HasDefaultValueSql("gen_random_uuid()");
+                        .HasDefaultValueSql("uuidv7()");
 
                     b.Property<string>("ReasonCode")
                         .HasColumnType("text")
@@ -282,7 +282,7 @@ namespace Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("public_id")
-                        .HasDefaultValueSql("gen_random_uuid()");
+                        .HasDefaultValueSql("uuidv7()");
 
                     b.Property<string>("SessionIdHash")
                         .IsRequired()
@@ -342,7 +342,7 @@ namespace Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("public_id")
-                        .HasDefaultValueSql("gen_random_uuid()");
+                        .HasDefaultValueSql("uuidv7()");
 
                     b.HasKey("Id")
                         .HasName("pk_eligibility_rules");
@@ -392,7 +392,7 @@ namespace Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("public_id")
-                        .HasDefaultValueSql("gen_random_uuid()");
+                        .HasDefaultValueSql("uuidv7()");
 
                     b.Property<bool>("RequiresApproval")
                         .HasColumnType("boolean")
@@ -474,7 +474,7 @@ namespace Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("public_id")
-                        .HasDefaultValueSql("gen_random_uuid()");
+                        .HasDefaultValueSql("uuidv7()");
 
                     b.Property<string>("ResourceType")
                         .IsRequired()
@@ -566,7 +566,7 @@ namespace Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("public_id")
-                        .HasDefaultValueSql("gen_random_uuid()");
+                        .HasDefaultValueSql("uuidv7()");
 
                     b.Property<int>("RoleId")
                         .HasColumnType("integer")
@@ -633,7 +633,7 @@ namespace Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("public_id")
-                        .HasDefaultValueSql("gen_random_uuid()");
+                        .HasDefaultValueSql("uuidv7()");
 
                     b.Property<string>("ReasonCode")
                         .HasColumnType("text")
@@ -696,7 +696,7 @@ namespace Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("public_id")
-                        .HasDefaultValueSql("gen_random_uuid()");
+                        .HasDefaultValueSql("uuidv7()");
 
                     b.Property<string>("Subject")
                         .IsRequired()

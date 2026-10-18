@@ -12,7 +12,7 @@ public sealed class PrincipalConfiguration : IEntityTypeConfiguration<Principal>
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.Id).UseIdentityByDefaultColumn();
-        builder.Property(e => e.PublicId).HasDefaultValueSql("gen_random_uuid()");
+        builder.Property(e => e.PublicId).HasDefaultValueSql("uuidv7()");
         builder.Property(e => e.Issuer).IsRequired();
         builder.Property(e => e.Subject).IsRequired();
         builder.Property(e => e.DisplayName).IsRequired();

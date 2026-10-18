@@ -12,7 +12,7 @@ public sealed class AccessRequestConfiguration : IEntityTypeConfiguration<Access
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.Id).UseIdentityByDefaultColumn();
-        builder.Property(e => e.PublicId).HasDefaultValueSql("gen_random_uuid()");
+        builder.Property(e => e.PublicId).HasDefaultValueSql("uuidv7()");
         builder.Property(e => e.State).IsRequired();
         builder.Property(e => e.IdempotencyKey).IsRequired();
         builder.Property(e => e.Justification).IsRequired();
