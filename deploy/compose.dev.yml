@@ -172,7 +172,10 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
       Database__ConnectionString: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${APP_DB_USER};Password=${APP_DB_PASSWORD};Pooling=true;SSL Mode=Disable"
-      Redis__ConnectionString: "redis:6379,password=${REDIS_PASSWORD}"
+      Redis__Host: redis
+      Redis__Port: "6379"
+      Redis_User: default
+      Redis__Password: ${REDIS_PASSWORD}
       Keycloak__ClientSecret: ${KEYCLOAK_CLIENT_SECRET}
       Keycloak__MetadataAddress: "http://keycloak:8080/realms/pam/.well-known/openid-configuration"
 
