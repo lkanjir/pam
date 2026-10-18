@@ -12,7 +12,7 @@ public sealed class AuditEventConfiguration : IEntityTypeConfiguration<AuditEven
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.Id).UseIdentityByDefaultColumn();
-        builder.Property(e => e.PublicId).HasDefaultValueSql("gen_random_uuid()");
+        builder.Property(e => e.PublicId).HasDefaultValueSql("uuidv7()");
         builder.Property(e => e.EventType).IsRequired();
         builder.Property(e => e.ActorKind).IsRequired();
         builder.Property(e => e.CorrelationId).IsRequired();

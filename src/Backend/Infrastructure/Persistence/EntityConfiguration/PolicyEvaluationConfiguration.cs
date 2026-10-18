@@ -12,7 +12,7 @@ public sealed class PolicyEvaluationConfiguration : IEntityTypeConfiguration<Pol
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.Id).UseIdentityByDefaultColumn();
-        builder.Property(e => e.PublicId).HasDefaultValueSql("gen_random_uuid()");
+        builder.Property(e => e.PublicId).HasDefaultValueSql("uuidv7()");
         builder.Property(e => e.PolicyCode).IsRequired();
         builder.Property(e => e.Decision).IsRequired();
         builder.Property(e => e.EvaluatedAt).HasDefaultValueSql("now()");

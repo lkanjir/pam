@@ -12,7 +12,7 @@ public sealed class ManagedResourceConfiguration : IEntityTypeConfiguration<Mana
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.Id).UseIdentityByDefaultColumn();
-        builder.Property(e => e.PublicId).HasDefaultValueSql("gen_random_uuid()");
+        builder.Property(e => e.PublicId).HasDefaultValueSql("uuidv7()");
         builder.Property(e => e.Name).IsRequired();
         builder.Property(e => e.ResourceType).IsRequired();
         builder.Property(e => e.Environment).IsRequired();
