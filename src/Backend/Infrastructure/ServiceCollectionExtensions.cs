@@ -1,5 +1,8 @@
 using Infrastructure.Persistence;
 using Infrastructure.Sessions;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using Microsoft.AspNetCore.DataProtection.StackExchangeRedis;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,8 +58,14 @@ public static class ServiceCollectionExtensions
                 AbortOnConnectFail = false,
             };
             redisConfiguration.EndPoints.Add(redisOptions.Host, redisOptions.Port);
-            
+
             return ConnectionMultiplexer.Connect(redisConfiguration);
+        });
+
+        services.AddDataProtection().SetApplicationName("pam");
+        services.AddOptions<KeyManagementOptions>().Configure<IConnectionMultiplexer>((options, redis) =>
+        {
+            options.XmlRepository = new RedisXmlRepository(() => redis.GetDatabase(), "pam:data-protection:keys");
         });
 
         return services;
