@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Infrastructure;
 
@@ -31,14 +32,32 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddOptions<RedisOptions>().Bind(configuration.GetSection(RedisOptions.SectionName))
-            .Validate(options => !string.IsNullOrWhiteSpace(options.ConnectionString),
-                "Redis:Connection string is required").ValidateOnStart();
+            .Validate(options => !string.IsNullOrWhiteSpace(options.Host), "Redis:Host is required")
+            .Validate(options => options.Port is > 0 and <= 65535, "Redis:Port must be in interval [1-65535]")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.User), "Redis:User name is required")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.Password), "Redis:Password is required")
+            .ValidateOnStart();
 
         services.AddHealthChecks()
             .AddRedis(
-                connectionStringFactory: serviceProvider =>
-                    serviceProvider.GetRequiredService<IOptions<RedisOptions>>().Value.ConnectionString,
-                name: "redis", tags: ["ready"], timeout: TimeSpan.FromSeconds(1));
+                connectionMultiplexerFactory: serviceProvider =>
+                    serviceProvider.GetRequiredService<IConnectionMultiplexer>(), name: "redis", tags: ["ready"],
+                timeout: TimeSpan.FromSeconds(1));
+
+
+        services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>
+        {
+            var redisOptions = serviceProvider.GetRequiredService<IOptions<RedisOptions>>().Value;
+            var redisConfiguration = new ConfigurationOptions
+            {
+                User = redisOptions.User,
+                Password = redisOptions.Password,
+                AbortOnConnectFail = false,
+            };
+            redisConfiguration.EndPoints.Add(redisOptions.Host, redisOptions.Port);
+            
+            return ConnectionMultiplexer.Connect(redisConfiguration);
+        });
 
         return services;
     }
