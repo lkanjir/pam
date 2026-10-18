@@ -54,7 +54,7 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.6.3
-    command: start-dev
+    command: start-dev --import-realm
 
     environment:
       KC_DB: postgres
@@ -67,6 +67,9 @@ services:
       KC_METRICS_ENABLED: "true"
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+
+    volumes:
+      - ./keycloak/:/opt/keycloak/data/import:ro
 
     ports:
       - "127.0.0.1:8080:8080"
