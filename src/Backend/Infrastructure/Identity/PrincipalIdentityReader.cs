@@ -18,11 +18,11 @@ public sealed class PrincipalIdentityReader(PamDbContext dbContext) : IPrincipal
                      WHERE issuer = {issuer} AND subject = {subject}
                  )
                  SELECT 
-                     p.id AS "Id",
-                     p.public_id AS "PublicId",
-                     p.display_name AS "DisplayName",
-                     p.is_enabled AS "IsEnabled",
-                     r.code AS "RoleCode"
+                     p.id,
+                     p.public_id,
+                     p.display_name,
+                     p.is_enabled,
+                     r.code AS role_code
                  FROM matched_principals p
                  LEFT JOIN pam_role_assignments a ON a.principal_id = p.id
                  LEFT JOIN pam_roles r ON r.id = a.role_id
