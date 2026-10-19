@@ -1,4 +1,5 @@
 using Application.Identity;
+using Application.Sessions;
 using Infrastructure.Identity;
 using Infrastructure.Persistence;
 using Infrastructure.Sessions;
@@ -71,6 +72,7 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddScoped<IPrincipalIdentityReader, PrincipalIdentityReader>();
+        services.AddScoped<ISessionLedgerWriter, SessionLedgerWriter>();
         
         return services;
     }
