@@ -4,6 +4,7 @@ using Domain;
 using Infrastructure.Persistence;
 using Infrastructure.Sessions;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Backend.IntegrationTests.Sessions;
 
@@ -127,6 +128,70 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
 
         // Assert
         Assert.Equal("logout", await database.Context.AuthenticationSessionLedgers.Select(s => s.EndReason).SingleAsync());
+    }
+
+    [Fact]
+    public async Task RecordEndedAsync_PersistsLogoutAuditForSession()
+    {
+        // Arrange
+        await using var database = await postgres.CreateDatabaseAsync();
+        var session = await CreateSessionAsync(database.Context);
+        var writer = new SessionLedgerWriter(database.Context);
+        await writer.RecordStartedAsync(session);
+
+        // Act
+        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout");
+
+        // Assert
+        Assert.True(await database.Context.AuditEvents.AnyAsync(e =>
+            e.EventType == "authentication.session.ended" &&
+            e.SessionIdHash == session.SessionIdHash &&
+            e.ActorPrincipalId == session.PrincipalId &&
+            e.SubjectPrincipalId == session.PrincipalId &&
+            e.ReasonCode == "logout"));
+    }
+
+    [Fact]
+    public async Task RecordEndedAsync_WhenRepeated_DoesNotDuplicateAudit()
+    {
+        // Arrange
+        await using var database = await postgres.CreateDatabaseAsync();
+        var session = await CreateSessionAsync(database.Context);
+        var writer = new SessionLedgerWriter(database.Context);
+        await writer.RecordStartedAsync(session);
+        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout");
+
+        // Act
+        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(2), "logout");
+
+        // Assert
+        Assert.Equal(1, await database.Context.AuditEvents.CountAsync(e =>
+            e.EventType == "authentication.session.ended" && e.SessionIdHash == session.SessionIdHash));
+    }
+
+    [Fact]
+    public async Task RecordEndedAsync_WhenAuditInsertFails_KeepsSessionOpen()
+    {
+        // Arrange
+        await using var database = await postgres.CreateDatabaseAsync();
+        var session = await CreateSessionAsync(database.Context);
+        var writer = new SessionLedgerWriter(database.Context);
+        await writer.RecordStartedAsync(session);
+        await database.Context.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE audit_events ADD CONSTRAINT reject_session_end CHECK (event_type <> 'authentication.session.ended')");
+
+        // Act
+        var error = await Record.ExceptionAsync(() =>
+            writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout"));
+
+        // Assert
+        // A syntax error must not masquerade as a successful rollback test.
+        var postgresError = Assert.IsType<PostgresException>(error);
+        Assert.Equal(PostgresErrorCodes.CheckViolation, postgresError.SqlState);
+        Assert.Equal("reject_session_end", postgresError.ConstraintName);
+        var persisted = await database.Context.AuthenticationSessionLedgers.AsNoTracking().SingleAsync();
+        Assert.Null(persisted.EndedAt);
+        Assert.Null(persisted.EndReason);
     }
 
     private static async Task<SessionStarted> CreateSessionAsync(PamDbContext db)

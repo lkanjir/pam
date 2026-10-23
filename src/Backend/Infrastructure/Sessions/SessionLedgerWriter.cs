@@ -70,12 +70,61 @@ public sealed class SessionLedgerWriter(PamDbContext dbContext) : ISessionLedger
         CancellationToken cancellationToken = default)
     {
         var endedAtUtc = endedAt.UtcDateTime;
+        var correlationId = Guid.NewGuid().ToString("N");
 
-        await dbContext.AuthenticationSessionLedgers
-            .Where(session => session.SessionIdHash == sessionIdHash && session.EndedAt == null)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(session => session.EndedAt, endedAtUtc)
-                    .SetProperty(session => session.EndReason, reason), cancellationToken);
+        await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+                WITH ended AS (
+                    UPDATE authentication_session_ledger
+                    SET ended_at = {endedAtUtc},
+                        end_reason = {reason}
+                    WHERE session_id_hash = {sessionIdHash} AND ended_at IS NULL
+                    RETURNING principal_id, session_id_hash
+                ),
+                snapshot AS (
+                    SELECT
+                        e.principal_id,
+                        e.session_id_hash,
+                        jsonb_build_object(
+                            'id', p.id,
+                            'publicId', p.public_id,
+                            'displayName', p.display_name,
+                            'issuer', p.issuer,
+                            'subject', p.subject
+                        ) AS principal_snapshot
+                    FROM ended e
+                    JOIN principals p ON p.id = e.principal_id
+                )
+                INSERT INTO audit_events (
+                    event_type,
+                    schema_version,
+                    occurred_at,
+                    actor_kind,
+                    actor_principal_id,
+                    subject_principal_id,
+                    actor_snapshot,
+                    subject_snapshot,
+                    session_id_hash,
+                    correlation_id,
+                    source,
+                    outcome,
+                    reason_code
+                )
+                SELECT
+                    'authentication.session.ended',
+                    1,
+                    {endedAtUtc},
+                    'principal',
+                    principal_id,
+                    principal_id,
+                    principal_snapshot,
+                    principal_snapshot,
+                    session_id_hash,
+                    {correlationId},
+                    'pam.api',
+                    'success',
+                    {reason}
+                FROM snapshot
+             """, cancellationToken);
     }
 }
