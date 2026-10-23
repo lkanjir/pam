@@ -21,7 +21,7 @@ public sealed class PamTicketStore(
         HttpContext httpContext,
         CancellationToken cancellationToken) =>
         StoreCoreAsync(ticket, httpContext, cancellationToken);
-    
+
     private async Task<string> StoreCoreAsync(AuthenticationTicket ticket, HttpContext? context,
         CancellationToken cancellationToken)
     {
@@ -62,7 +62,22 @@ public sealed class PamTicketStore(
         }
     }
 
-    public Task RenewAsync(string key, AuthenticationTicket ticket) => redisStore.RenewAsync(key, ticket);
+    public Task RenewAsync(string key, AuthenticationTicket ticket) => RenewAsync(key, ticket, CancellationToken.None);
+
+    public async Task RenewAsync(string key, AuthenticationTicket ticket, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var ledgerWriter = scope.ServiceProvider.GetRequiredService<ISessionLedgerWriter>();
+
+        var renewed = await redisStore.TryRenewAsync(key, ticket);
+        if (!renewed) return;
+
+        var expiresAt = ticket.Properties.ExpiresUtc!.Value;
+
+        await ledgerWriter.RecordRenewedAsync(SessionIdentifier.Hash(key), expiresAt, token);
+    }
 
     public Task<AuthenticationTicket?> RetrieveAsync(string key) => redisStore.RetrieveAsync(key);
 

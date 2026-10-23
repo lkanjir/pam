@@ -1,8 +1,5 @@
 using System.Globalization;
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Security.Principal;
-using System.Text;
 using Application.Sessions;
 using Microsoft.AspNetCore.Authentication;
 
@@ -27,7 +24,7 @@ internal static class SessionStartedFactory
         var userAgent = context?.Request.Headers.UserAgent.ToString();
         if (userAgent?.Length > 2048) userAgent = userAgent[..2048];
 
-        var sessionIdHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sessionId)));
+        var sessionIdHash = SessionIdentifier.Hash(sessionId);
 
         return new SessionStarted(
             PrincipalId: principalId,
