@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Application.Sessions;
 using Domain;
 using Infrastructure.Persistence;
@@ -20,7 +21,36 @@ public sealed class SessionLedgerWriter(PamDbContext dbContext) : ISessionLedger
             UserAgent = session.UserAgent,
         };
 
+        var principalSnapshot = JsonSerializer.Serialize(new
+        {
+            id = session.PrincipalId,
+            publicId = session.PrincipalPublicId,
+            displayName = session.DisplayName,
+            issuer = session.Issuer,
+            subject = session.Subject
+        });
+
+        var auditEvent = new AuditEvent
+        {
+            EventType = "authentication.session.started",
+            SchemaVersion = 1,
+            OccurredAt = session.CreatedAt.UtcDateTime,
+
+            ActorKind = "principal",
+            ActorPrincipalId = session.PrincipalId,
+            SubjectPrincipalId = session.PrincipalId,
+            ActorSnapshot = principalSnapshot,
+            SubjectSnapshot = principalSnapshot,
+
+            SessionIdHash = session.SessionIdHash,
+            CorrelationId = session.CorrelationId,
+            Source = "pam.api",
+            Outcome = "success"
+        };
+
         dbContext.AuthenticationSessionLedgers.Add(ledger);
+        dbContext.AuditEvents.Add(auditEvent);
+        
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 

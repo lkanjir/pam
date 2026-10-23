@@ -9,4 +9,9 @@ public sealed record SessionStarted(
     DateTimeOffset CreatedAt,
     DateTimeOffset ExpectedExpiresAt,
     IPAddress? ClientIpAddress,
-    string? UserAgent);
+    string? UserAgent,
+    string? PrincipalPublicId,
+    string? DisplayName,
+    string? Issuer,
+    string? Subject,
+    string CorrelationId);
