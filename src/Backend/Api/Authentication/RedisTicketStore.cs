@@ -42,13 +42,18 @@ public sealed class RedisTicketStore : ITicketStore
 
     public async Task RenewAsync(string key, AuthenticationTicket ticket)
     {
-        if (!IsValidSessionId(key)) return;
+        await TryRenewAsync(key, ticket);
+    }
+
+    public async Task<bool> TryRenewAsync(string key, AuthenticationTicket ticket)
+    {
+        if (!IsValidSessionId(key)) return false;
 
         var redisKey = GetRedisKey(key);
         var payload = Protect(ticket, redisKey);
         var ttl = GetTimeToLive(ticket);
 
-        await _database.StringSetAsync(redisKey, payload, ttl, When.Exists);
+        return await _database.StringSetAsync(redisKey, payload, ttl, When.Exists);
     }
 
     public async Task<AuthenticationTicket?> RetrieveAsync(string key)
@@ -84,11 +89,7 @@ public sealed class RedisTicketStore : ITicketStore
         await _database.KeyDeleteAsync(GetRedisKey(key));
     }
 
-    private static string GetRedisKey(string sessionId)
-    {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(sessionId));
-        return KeyPrefix + Convert.ToHexString(hash);
-    }
+    private static string GetRedisKey(string sessionId) => KeyPrefix + SessionIdentifier.Hash(sessionId);
 
     private byte[] Protect(AuthenticationTicket ticket, string redisKey)
     {
