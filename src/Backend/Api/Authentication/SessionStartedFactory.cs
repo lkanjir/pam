@@ -36,6 +36,11 @@ internal static class SessionStartedFactory
             CreatedAt: createdAt,
             ExpectedExpiresAt: expiresAt,
             ClientIpAddress: context?.Connection.RemoteIpAddress,
-            UserAgent: userAgent);
+            UserAgent: userAgent,
+            PrincipalPublicId: ticket.Principal.FindFirst("pam_public_id")?.Value,
+            DisplayName: ticket.Principal.FindFirst("name")?.Value,
+            Issuer: ticket.Principal.FindFirst("pam_issuer")?.Value,
+            Subject: ticket.Principal.FindFirst("sub")?.Value,
+            CorrelationId: context?.TraceIdentifier ?? Guid.NewGuid().ToString("N"));
     }
 }
