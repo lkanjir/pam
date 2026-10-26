@@ -27,6 +27,23 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    public static IServiceCollection AddPamSessionOptions(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.AddOptions<PamSessionOptions>()
+            .Bind(configuration.GetSection(PamSessionOptions.SectionName))
+            .Validate(
+                options => options.IdleTimeout > TimeSpan.Zero,
+                "PamSession:IdleTimeout must be positive.")
+            .Validate(
+                options => options.AbsoluteTimeout >= options.IdleTimeout,
+                "PamSession:AbsoluteTimeout must be at least IdleTimeout.")
+            .ValidateOnStart();
+
+        return services;
+    }
+
     public static IServiceCollection AddPamAuthentication(this IServiceCollection services,
         IHostEnvironment environment)
     {
@@ -47,7 +64,6 @@ public static class ServiceCollectionExtensions
             options.Cookie.SecurePolicy = environment.IsDevelopment()
                 ? CookieSecurePolicy.SameAsRequest
                 : CookieSecurePolicy.Always;
-            options.ExpireTimeSpan = TimeSpan.FromMinutes(30);
             options.SlidingExpiration = true;
             options.Events.OnRedirectToLogin = context =>
             {
@@ -66,6 +82,10 @@ public static class ServiceCollectionExtensions
                 options, ticketStore) =>
             {
                 options.SessionStore = ticketStore;
+            })
+            .Configure<IOptions<PamSessionOptions>>((options, sessionOptions) =>
+            {
+                options.ExpireTimeSpan = sessionOptions.Value.IdleTimeout;
             });
 
         services.AddAuthorization();
