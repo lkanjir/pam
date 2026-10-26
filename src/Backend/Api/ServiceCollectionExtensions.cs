@@ -47,6 +47,8 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddPamAuthentication(this IServiceCollection services,
         IHostEnvironment environment)
     {
+        services.AddSingleton<PamSessionLifetime>();
+
         services.AddAuthentication(options =>
         {
             options.DefaultAuthenticateScheme = CookieAuthenticationDefaults.AuthenticationScheme;
@@ -86,6 +88,15 @@ public static class ServiceCollectionExtensions
             .Configure<IOptions<PamSessionOptions>>((options, sessionOptions) =>
             {
                 options.ExpireTimeSpan = sessionOptions.Value.IdleTimeout;
+            })
+            .Configure<PamSessionLifetime>((options, sessionLifetime) =>
+            {
+                // Sign-in may reuse an existing session via RenewAsync instead of StoreAsync.
+                options.Events.OnSigningIn = context =>
+                {
+                    sessionLifetime.Initialize(context.Properties);
+                    return Task.CompletedTask;
+                };
             });
 
         services.AddAuthorization();

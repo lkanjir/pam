@@ -24,6 +24,7 @@ public static class AuthenticationEndpoints
         endpoints.MapPost("/auth/logout", async (HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
+            context.Features.Set(new SessionTermination("logout"));
 
             await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return TypedResults.NoContent();
