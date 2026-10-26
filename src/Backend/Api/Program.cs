@@ -1,6 +1,7 @@
 using Api;
 using Api.Authentication;
 using Api.Filters;
+using Api.Errors;
 using Infrastructure;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -17,9 +18,11 @@ builder.Services.AddPamSessionOptions(builder.Configuration);
 builder.Services.AddPamAuthentication(builder.Environment);
 builder.Services.AddPamAntiforgery(builder.Environment);
 builder.Services.AddOpenApi();
+builder.Services.AddPamErrorHandling();
 
 var app = builder.Build();
 
+app.UsePamErrorHandling();
 app.UseAuthentication();
 app.UseAuthorization();
 
