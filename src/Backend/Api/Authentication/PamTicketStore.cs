@@ -8,6 +8,7 @@ public sealed class PamTicketStore(
     RedisTicketStore redisStore,
     IServiceScopeFactory scopeFactory,
     TimeProvider timeProvider,
+    PamSessionLifetime sessionLifetime,
     ILogger<PamTicketStore> logger) : ITicketStore
 {
     public Task<string> StoreAsync(AuthenticationTicket ticket) =>
@@ -26,6 +27,7 @@ public sealed class PamTicketStore(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        sessionLifetime.Initialize(ticket.Properties);
 
         await using var scope = scopeFactory.CreateAsyncScope();
 
@@ -67,6 +69,7 @@ public sealed class PamTicketStore(
     public async Task RenewAsync(string key, AuthenticationTicket ticket, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
+        if (!sessionLifetime.TryLimitExpiration(ticket.Properties)) return;
 
         await using var scope = scopeFactory.CreateAsyncScope();
         var ledgerWriter = scope.ServiceProvider.GetRequiredService<ISessionLedgerWriter>();
@@ -79,7 +82,42 @@ public sealed class PamTicketStore(
         await ledgerWriter.RecordRenewedAsync(SessionIdentifier.Hash(key), expiresAt, token);
     }
 
-    public Task<AuthenticationTicket?> RetrieveAsync(string key) => redisStore.RetrieveAsync(key);
+    public async Task<AuthenticationTicket?> RetrieveAsync(string key)
+    {
+        var ticket = await redisStore.RetrieveAsync(key);
+        return ticket is not null && sessionLifetime.IsValid(ticket.Properties) ? ticket : null;
+    }
 
     public Task RemoveAsync(string key) => redisStore.RemoveAsync(key);
+
+    public async Task RemoveAsync(string key, HttpContext httpContext, CancellationToken cancellationToken)
+    {
+        if (!SessionIdentifier.IsValid(key)) return;
+
+        await redisStore.RemoveAsync(key);
+
+        var termination = httpContext.Features.Get<SessionTermination>();
+        if (termination is null) return;
+
+        var sessionIdHash = SessionIdentifier.Hash(key);
+
+        try
+        {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var ledgerWriter = scope.ServiceProvider.GetRequiredService<ISessionLedgerWriter>();
+
+            await ledgerWriter.RecordEndedAsync(sessionIdHash, timeProvider.GetUtcNow(), termination.Reason,
+                CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                "Session was revoked, but its ledger/audit end could not be persisted. " +
+                "Session hash: {SessionIdHash}; correlation: {CorrelationId}; " +
+                "error type: {ErrorType}.",
+                sessionIdHash,
+                httpContext.TraceIdentifier,
+                exception.GetType().Name);
+        }
+    }
 }

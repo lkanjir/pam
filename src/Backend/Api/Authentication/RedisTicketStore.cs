@@ -47,7 +47,7 @@ public sealed class RedisTicketStore : ITicketStore
 
     public async Task<bool> TryRenewAsync(string key, AuthenticationTicket ticket)
     {
-        if (!IsValidSessionId(key)) return false;
+        if (!SessionIdentifier.IsValid(key)) return false;
 
         var redisKey = GetRedisKey(key);
         var payload = Protect(ticket, redisKey);
@@ -58,7 +58,7 @@ public sealed class RedisTicketStore : ITicketStore
 
     public async Task<AuthenticationTicket?> RetrieveAsync(string key)
     {
-        if (!IsValidSessionId(key)) return null;
+        if (!SessionIdentifier.IsValid(key)) return null;
 
         var redisKey = GetRedisKey(key);
         var value = await _database.StringGetAsync(redisKey);
@@ -84,7 +84,7 @@ public sealed class RedisTicketStore : ITicketStore
 
     public async Task RemoveAsync(string key)
     {
-        if (!IsValidSessionId(key)) return;
+        if (!SessionIdentifier.IsValid(key)) return;
 
         await _database.KeyDeleteAsync(GetRedisKey(key));
     }
@@ -107,7 +107,4 @@ public sealed class RedisTicketStore : ITicketStore
             ? throw new InvalidOperationException("Authentication ticket has expired or is about to expire")
             : ttl;
     }
-
-    private static bool IsValidSessionId(string? sessionId) =>
-        sessionId is { Length: 64 } && sessionId.All(char.IsAsciiHexDigitUpper);
 }

@@ -1,4 +1,7 @@
 using Api.Authentication;
+using Api.Configuration;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
 using Application.Sessions;
 using Backend.Tests.Support;
 using FakeItEasy;
@@ -17,6 +20,7 @@ internal sealed class TicketStoreFixture : IDisposable
     public TestTimeProvider Clock { get; } = new();
     public RedisTicketStore Redis { get; }
     public PamTicketStore Store { get; }
+    public PamSessionLifetime Lifetime { get; }
 
     public TicketStoreFixture()
     {
@@ -28,8 +32,20 @@ internal sealed class TicketStoreFixture : IDisposable
             .AddScoped<ISessionLedgerWriter>(_ => Ledger)
             .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         Redis = new RedisTicketStore(multiplexer, new EphemeralDataProtectionProvider(), Clock);
+        Lifetime = new PamSessionLifetime(Options.Create(new PamSessionOptions
+        {
+            IdleTimeout = TimeSpan.FromMinutes(30),
+            AbsoluteTimeout = TimeSpan.FromHours(8)
+        }), Clock);
         Store = new PamTicketStore(Redis, _services.GetRequiredService<IServiceScopeFactory>(),
-            Clock, NullLogger<PamTicketStore>.Instance);
+            Clock, Lifetime, NullLogger<PamTicketStore>.Instance);
+    }
+
+    public AuthenticationTicket StartedTicket()
+    {
+        var ticket = SessionTestData.Ticket(Clock.Now);
+        Lifetime.Initialize(ticket.Properties);
+        return ticket;
     }
 
     public void Dispose() => _services.Dispose();

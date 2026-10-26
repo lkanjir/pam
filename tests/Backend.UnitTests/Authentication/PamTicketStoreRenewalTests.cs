@@ -9,11 +9,43 @@ public sealed class PamTicketStoreRenewalTests
     private static readonly string SessionId = new('A', 64);
 
     [Fact]
-    public async Task RenewAsync_WhenRedisSucceeds_UpdatesLedgerExpiry()
+    public async Task RenewAsync_AfterAbsoluteDeadline_DoesNotWriteRedis()
+    {
+        // Arrange
+        using var fixture = new TicketStoreFixture();
+        var ticket = fixture.StartedTicket();
+        fixture.Clock.Now = fixture.Clock.Now.AddHours(8);
+        ticket.Properties.ExpiresUtc = fixture.Clock.Now.AddMinutes(30);
+
+        // Act
+        await fixture.Store.RenewAsync(SessionId, ticket);
+
+        // Assert
+        A.CallTo(() => fixture.Database.StringSetAsync(A<RedisKey>._, A<RedisValue>._,
+            A<TimeSpan?>._, When.Exists)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task RenewAsync_WithoutAbsoluteDeadline_DoesNotWriteRedis()
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
         var ticket = SessionTestData.Ticket(fixture.Clock.Now);
+
+        // Act
+        await fixture.Store.RenewAsync(SessionId, ticket);
+
+        // Assert
+        A.CallTo(() => fixture.Database.StringSetAsync(A<RedisKey>._, A<RedisValue>._,
+            A<TimeSpan?>._, When.Exists)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task RenewAsync_WhenRedisSucceeds_UpdatesLedgerExpiry()
+    {
+        // Arrange
+        using var fixture = new TicketStoreFixture();
+        var ticket = fixture.StartedTicket();
         A.CallTo(() => fixture.Database.StringSetAsync(A<RedisKey>._, A<RedisValue>._,
             A<TimeSpan?>._, When.Exists)).Returns(true);
 
@@ -30,7 +62,7 @@ public sealed class PamTicketStoreRenewalTests
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
-        var ticket = SessionTestData.Ticket(fixture.Clock.Now);
+        var ticket = fixture.StartedTicket();
         A.CallTo(() => fixture.Database.StringSetAsync(A<RedisKey>._, A<RedisValue>._,
             A<TimeSpan?>._, When.Exists)).Returns(false);
 
@@ -52,7 +84,7 @@ public sealed class PamTicketStoreRenewalTests
 
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            fixture.Store.RenewAsync(SessionId, SessionTestData.Ticket(fixture.Clock.Now)));
+            fixture.Store.RenewAsync(SessionId, fixture.StartedTicket()));
 
         // Assert
         A.CallTo(() => fixture.Ledger.RecordRenewedAsync(A<string>._,
@@ -72,7 +104,7 @@ public sealed class PamTicketStoreRenewalTests
 
         // Act
         var error = await Record.ExceptionAsync(() =>
-            fixture.Store.RenewAsync(SessionId, SessionTestData.Ticket(fixture.Clock.Now)));
+            fixture.Store.RenewAsync(SessionId, fixture.StartedTicket()));
 
         // Assert
         Assert.Same(failure, error);
@@ -91,7 +123,7 @@ public sealed class PamTicketStoreRenewalTests
 
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            fixture.Store.RenewAsync(SessionId, SessionTestData.Ticket(fixture.Clock.Now)));
+            fixture.Store.RenewAsync(SessionId, fixture.StartedTicket()));
 
         // Assert
         A.CallTo(() => fixture.Database.KeyDeleteAsync(A<RedisKey>._, CommandFlags.None)).MustNotHaveHappened();
