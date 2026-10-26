@@ -13,6 +13,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddSingleton<RedisTicketStore>();
 builder.Services.AddSingleton<ITicketStore, PamTicketStore>();
 builder.Services.AddKeycloak(builder.Configuration);
+builder.Services.AddPamSessionOptions(builder.Configuration);
 builder.Services.AddPamAuthentication(builder.Environment);
 builder.Services.AddPamAntiforgery(builder.Environment);
 builder.Services.AddOpenApi();
