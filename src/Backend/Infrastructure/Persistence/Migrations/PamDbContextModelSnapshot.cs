@@ -23,7 +23,7 @@ namespace Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("Domain.AccessRequest", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.AccessRequest", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -99,7 +99,7 @@ namespace Infrastructure.Persistence.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Domain.AuditEvent", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.AuditEvent", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -227,7 +227,7 @@ namespace Infrastructure.Persistence.Migrations
                     b.ToTable("audit_events", (string)null);
                 });
 
-            modelBuilder.Entity("Domain.AuthenticationSessionLedger", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.AuthenticationSessionLedger", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -311,7 +311,7 @@ namespace Infrastructure.Persistence.Migrations
                     b.ToTable("authentication_session_ledger", (string)null);
                 });
 
-            modelBuilder.Entity("Domain.EligibilityRule", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.EligibilityRule", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -361,7 +361,7 @@ namespace Infrastructure.Persistence.Migrations
                     b.ToTable("eligibility_rules", (string)null);
                 });
 
-            modelBuilder.Entity("Domain.Entitlement", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.Entitlement", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -423,7 +423,7 @@ namespace Infrastructure.Persistence.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Domain.ManagedResource", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.ManagedResource", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -497,7 +497,7 @@ namespace Infrastructure.Persistence.Migrations
                     b.ToTable("managed_resources", (string)null);
                 });
 
-            modelBuilder.Entity("Domain.PamRole", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.PamRole", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -539,7 +539,7 @@ namespace Infrastructure.Persistence.Migrations
                     b.ToTable("pam_roles", (string)null);
                 });
 
-            modelBuilder.Entity("Domain.PamRoleAssignment", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.PamRoleAssignment", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -592,7 +592,7 @@ namespace Infrastructure.Persistence.Migrations
                     b.ToTable("pam_role_assignments", (string)null);
                 });
 
-            modelBuilder.Entity("Domain.PolicyEvaluation", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.PolicyEvaluation", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -657,7 +657,7 @@ namespace Infrastructure.Persistence.Migrations
                     b.ToTable("policy_evaluations", (string)null);
                 });
 
-            modelBuilder.Entity("Domain.Principal", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.Principal", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -717,16 +717,16 @@ namespace Infrastructure.Persistence.Migrations
                     b.ToTable("principals", (string)null);
                 });
 
-            modelBuilder.Entity("Domain.AccessRequest", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.AccessRequest", b =>
                 {
-                    b.HasOne("Domain.Entitlement", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Entitlement", null)
                         .WithMany()
                         .HasForeignKey("EntitlementId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_access_requests_entitlements_entitlement_id");
 
-                    b.HasOne("Domain.Principal", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
                         .WithMany()
                         .HasForeignKey("RequesterPrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -734,42 +734,42 @@ namespace Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_access_requests_principals_requester_principal_id");
                 });
 
-            modelBuilder.Entity("Domain.AuditEvent", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.AuditEvent", b =>
                 {
-                    b.HasOne("Domain.Principal", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
                         .WithMany()
                         .HasForeignKey("ActorPrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_audit_events_principals_actor_principal_id");
 
-                    b.HasOne("Domain.Entitlement", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Entitlement", null)
                         .WithMany()
                         .HasForeignKey("EntitlementId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_audit_events_entitlements_entitlement_id");
 
-                    b.HasOne("Domain.AccessRequest", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.AccessRequest", null)
                         .WithMany()
                         .HasForeignKey("RequestId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_audit_events_access_requests_request_id");
 
-                    b.HasOne("Domain.ManagedResource", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.ManagedResource", null)
                         .WithMany()
                         .HasForeignKey("ResourceId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_audit_events_managed_resources_resource_id");
 
-                    b.HasOne("Domain.Principal", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
                         .WithMany()
                         .HasForeignKey("SubjectPrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_audit_events_principals_subject_principal_id");
                 });
 
-            modelBuilder.Entity("Domain.AuthenticationSessionLedger", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.AuthenticationSessionLedger", b =>
                 {
-                    b.HasOne("Domain.Principal", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
                         .WithMany()
                         .HasForeignKey("PrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -777,16 +777,16 @@ namespace Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_authentication_session_ledger_principals_principal_id");
                 });
 
-            modelBuilder.Entity("Domain.EligibilityRule", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.EligibilityRule", b =>
                 {
-                    b.HasOne("Domain.Entitlement", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Entitlement", null)
                         .WithMany()
                         .HasForeignKey("EntitlementId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_eligibility_rules_entitlements_entitlement_id");
 
-                    b.HasOne("Domain.Principal", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
                         .WithMany()
                         .HasForeignKey("PrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -794,9 +794,9 @@ namespace Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_eligibility_rules_principals_principal_id");
                 });
 
-            modelBuilder.Entity("Domain.Entitlement", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.Entitlement", b =>
                 {
-                    b.HasOne("Domain.ManagedResource", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.ManagedResource", null)
                         .WithMany()
                         .HasForeignKey("ResourceId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -804,16 +804,16 @@ namespace Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_entitlements_managed_resources_resource_id");
                 });
 
-            modelBuilder.Entity("Domain.ManagedResource", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.ManagedResource", b =>
                 {
-                    b.HasOne("Domain.Principal", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
                         .WithMany()
                         .HasForeignKey("CreatedByPrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_managed_resources_principals_created_by_principal_id");
 
-                    b.HasOne("Domain.Principal", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
                         .WithMany()
                         .HasForeignKey("ModifiedByPrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -821,9 +821,9 @@ namespace Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_managed_resources_principals_modified_by_principal_id");
                 });
 
-            modelBuilder.Entity("Domain.PamRole", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.PamRole", b =>
                 {
-                    b.HasOne("Domain.Principal", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
                         .WithMany()
                         .HasForeignKey("CreatedByPrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -831,23 +831,23 @@ namespace Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_pam_roles_principals_created_by_principal_id");
                 });
 
-            modelBuilder.Entity("Domain.PamRoleAssignment", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.PamRoleAssignment", b =>
                 {
-                    b.HasOne("Domain.Principal", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
                         .WithMany()
                         .HasForeignKey("AssignedByPrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_pam_role_assignments_principals_assigned_by_principal_id");
 
-                    b.HasOne("Domain.Principal", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
                         .WithMany()
                         .HasForeignKey("PrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_pam_role_assignments_principals_principal_id");
 
-                    b.HasOne("Domain.PamRole", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.PamRole", null)
                         .WithMany()
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -855,9 +855,9 @@ namespace Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_pam_role_assignments_pam_roles_role_id");
                 });
 
-            modelBuilder.Entity("Domain.PolicyEvaluation", b =>
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.PolicyEvaluation", b =>
                 {
-                    b.HasOne("Domain.AccessRequest", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.AccessRequest", null)
                         .WithMany()
                         .HasForeignKey("RequestId")
                         .OnDelete(DeleteBehavior.Restrict)

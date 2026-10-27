@@ -4,7 +4,6 @@ WORKDIR /src
 # Copy project files first so dependency restore can be cached.
 COPY Api/Api.csproj Api/
 COPY Application/Application.csproj Application/
-COPY Domain/Domain.csproj Domain/
 COPY Infrastructure/Infrastructure.csproj Infrastructure/
 
 RUN dotnet restore Api/Api.csproj
