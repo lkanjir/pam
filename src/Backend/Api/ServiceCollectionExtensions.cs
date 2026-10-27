@@ -67,6 +67,7 @@ public static class ServiceCollectionExtensions
                 ? CookieSecurePolicy.SameAsRequest
                 : CookieSecurePolicy.Always;
             options.SlidingExpiration = true;
+            options.Events.OnValidatePrincipal = PamPrincipalValidation.ValidateAsync;
             options.Events.OnRedirectToLogin = context =>
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
