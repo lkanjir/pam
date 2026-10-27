@@ -35,12 +35,9 @@ public static class AuthenticationEndpoints
     {
         context.Response.Headers.CacheControl = "no-store";
 
-        var publicIdClaim = user.FindFirst("pam_public_id")?.Value;
-        if (!Guid.TryParse(publicIdClaim, out var publicId)) return TypedResults.Unauthorized();
+        if (!PamClaims.TryRead(user, out var identity)) return TypedResults.Unauthorized();
+        var response = new CurrentUserResponse(identity.PublicId, identity.DisplayName, [.. identity.Roles]);
 
-        var response = new CurrentUserResponse(publicId, user.Identity?.Name ?? string.Empty,
-            [.. user.FindAll("pam_role").Select(claim => claim.Value)]);
-        
         return TypedResults.Ok(response);
     }
 }
