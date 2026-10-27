@@ -84,7 +84,8 @@ internal static class SessionTestHost
 
     public static void UpdateCookie(HttpClient client, HttpResponseMessage response)
     {
-        if (!response.Headers.TryGetValues("Set-Cookie", out var cookies)) return;
+        if (!response.Headers.TryGetValues("Set-Cookie", out var cookies))
+            return;
         // Standard sign-out followed by sign-in emits deletion and replacement.
         // Apply them in response order, as a browser does.
         var jar = new CookieContainer();
@@ -95,7 +96,8 @@ internal static class SessionTestHost
             jar.SetCookies(client.BaseAddress!, cookie);
         client.DefaultRequestHeaders.Remove("Cookie");
         var header = jar.GetCookieHeader(client.BaseAddress!);
-        if (header.Length > 0) client.DefaultRequestHeaders.Add("Cookie", header);
+        if (header.Length > 0)
+            client.DefaultRequestHeaders.Add("Cookie", header);
     }
 
     public static Task RejectLogoutAuditAsync(TestDatabase database) =>

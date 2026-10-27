@@ -1,0 +1,13 @@
+# Only backend sources and shared build settings enter the image build context.
+**
+!Directory.Build.props
+!Directory.Packages.props
+!src/
+!src/Backend/
+!src/Backend/**
+**/bin/
+**/obj/
+**/.idea/
+**/.vs/
+**/.env
+**/.env.*
