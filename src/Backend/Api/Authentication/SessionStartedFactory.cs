@@ -15,22 +15,21 @@ internal static class SessionStartedFactory
                         throw new InvalidOperationException("Authentication ticket must have an expiration time.");
 
         var userAgent = context?.Request.Headers.UserAgent.ToString();
-        if (userAgent?.Length > 2048) userAgent = userAgent[..2048];
+        if (userAgent?.Length > 2048)
+            userAgent = userAgent[..2048];
 
         var sessionIdHash = SessionIdentifier.Hash(sessionId);
 
         return new SessionStarted(
-            PrincipalId: identity.Id,
+            Principal: new PrincipalSnapshot(
+                identity.Id, identity.PublicId, identity.DisplayName, identity.Issuer, identity.Subject),
             SessionIdHash: sessionIdHash,
             IdpSessionId: identity.IdpSessionId,
             CreatedAt: createdAt,
             ExpectedExpiresAt: expiresAt,
-            ClientIpAddress: context?.Connection.RemoteIpAddress,
-            UserAgent: userAgent,
-            PrincipalPublicId: identity.PublicId.ToString(),
-            DisplayName: identity.DisplayName,
-            Issuer: identity.Issuer,
-            Subject: identity.Subject,
-            CorrelationId: context?.TraceIdentifier ?? Guid.NewGuid().ToString("N"));
+            Request: new SessionRequestMetadata(
+                context?.Connection.RemoteIpAddress,
+                userAgent,
+                context?.TraceIdentifier ?? Guid.NewGuid().ToString("N")));
     }
 }

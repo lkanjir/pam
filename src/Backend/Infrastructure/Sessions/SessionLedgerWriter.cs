@@ -8,27 +8,26 @@ namespace Infrastructure.Sessions;
 
 public sealed class SessionLedgerWriter(PamDbContext dbContext) : ISessionLedgerWriter
 {
+    // This JSON contract is also produced by jsonb_build_object in RecordEndedAsync.
+    private static readonly JsonSerializerOptions SnapshotJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     public async Task RecordStartedAsync(SessionStarted session, CancellationToken cancellationToken = default)
     {
         var ledger = new AuthenticationSessionLedger
         {
-            PrincipalId = session.PrincipalId,
+            PrincipalId = session.Principal.Id,
             SessionIdHash = session.SessionIdHash,
             IdpSessionId = session.IdpSessionId,
             CreatedAt = session.CreatedAt.UtcDateTime,
             ExpectedExpiresAt = session.ExpectedExpiresAt.UtcDateTime,
-            ClientIpAddress = session.ClientIpAddress,
-            UserAgent = session.UserAgent,
+            ClientIpAddress = session.Request.ClientIpAddress,
+            UserAgent = session.Request.UserAgent,
         };
 
-        var principalSnapshot = JsonSerializer.Serialize(new
-        {
-            id = session.PrincipalId,
-            publicId = session.PrincipalPublicId,
-            displayName = session.DisplayName,
-            issuer = session.Issuer,
-            subject = session.Subject
-        });
+        var principalSnapshot = JsonSerializer.Serialize(session.Principal, SnapshotJsonOptions);
 
         var auditEvent = new AuditEvent
         {
@@ -37,20 +36,20 @@ public sealed class SessionLedgerWriter(PamDbContext dbContext) : ISessionLedger
             OccurredAt = session.CreatedAt.UtcDateTime,
 
             ActorKind = "principal",
-            ActorPrincipalId = session.PrincipalId,
-            SubjectPrincipalId = session.PrincipalId,
+            ActorPrincipalId = session.Principal.Id,
+            SubjectPrincipalId = session.Principal.Id,
             ActorSnapshot = principalSnapshot,
             SubjectSnapshot = principalSnapshot,
 
             SessionIdHash = session.SessionIdHash,
-            CorrelationId = session.CorrelationId,
+            CorrelationId = session.Request.CorrelationId,
             Source = "pam.api",
             Outcome = "success"
         };
 
         dbContext.AuthenticationSessionLedgers.Add(ledger);
         dbContext.AuditEvents.Add(auditEvent);
-        
+
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 

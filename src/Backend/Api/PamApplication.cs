@@ -2,7 +2,6 @@ using Api.Authentication;
 using Api.Errors;
 using Api.Filters;
 using Infrastructure;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 namespace Api;
@@ -14,10 +13,7 @@ public static class PamApplication
     {
         services.AddSingleton<TimeProvider>(TimeProvider.System);
         services.AddInfrastructure(configuration);
-        services.AddSingleton<ITicketStore, PamTicketStore>();
-        services.AddKeycloak(configuration);
-        services.AddPamSessionOptions(configuration);
-        services.AddPamAuthentication(environment);
+        services.AddPamAuthentication(configuration, environment);
         services.AddPamAntiforgery(environment);
         services.AddOpenApi();
         services.AddPamErrorHandling();
@@ -35,7 +31,8 @@ public static class PamApplication
         app.MapGroup("/api").RequireAuthorization().AddEndpointFilter<AntiforgeryFilter>()
             .MapAuthenticationEndpoints();
 
-        if (app.Environment.IsDevelopment()) app.MapOpenApi();
+        if (app.Environment.IsDevelopment())
+            app.MapOpenApi();
         return app;
     }
 }

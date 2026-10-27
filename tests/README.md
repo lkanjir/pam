@@ -177,3 +177,17 @@ dependency on EF or Infrastructure.
 Moving the entity namespace does not change the database schema. The current EF
 model snapshot uses the new namespace; historical migration target models retain
 the original names. Integration tests apply the existing migrations to PostgreSQL.
+
+## Audit payload contract
+
+`SessionStarted` groups `PrincipalSnapshot` and `SessionRequestMetadata` separately
+from session lifetime data. The snapshot JSON retains schema version 1 and the
+fields `id` (number), `publicId` (string), `displayName`, `issuer`, and `subject`.
+Both actor and subject snapshots are checked against that contract for start and
+end events. Start events serialize the typed snapshot; end events still use one
+atomic PostgreSQL statement to close the ledger and insert the audit event.
+
+Authentication/session registrations have one entry point,
+`AddPamAuthentication(configuration, environment)`. Cookie/session options and
+OIDC registration are kept in separate files; antiforgery registration lives with
+the API filter. `AddPamApi` remains the shared composition root for tests and runtime.
