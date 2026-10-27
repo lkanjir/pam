@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Security.Claims;
 using Application.Sessions;
 using Microsoft.AspNetCore.Authentication;
 
@@ -10,13 +8,8 @@ internal static class SessionStartedFactory
     public static SessionStarted Create(string sessionId, AuthenticationTicket ticket, HttpContext? context,
         DateTimeOffset createdAt)
     {
-        var principalIdClaim = ticket.Principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
-        if (!long.TryParse(principalIdClaim, NumberStyles.None, CultureInfo.InvariantCulture, out var principalId) ||
-            principalId <= 0)
-        {
-            throw new InvalidOperationException("Authentication ticket must identify a local principal.");
-        }
+        if (!PamClaims.TryRead(ticket.Principal, out var identity))
+            throw new InvalidOperationException("Authentication ticket must contain a valid PAM identity.");
 
         var expiresAt = ticket.Properties.ExpiresUtc ??
                         throw new InvalidOperationException("Authentication ticket must have an expiration time.");
@@ -27,17 +20,17 @@ internal static class SessionStartedFactory
         var sessionIdHash = SessionIdentifier.Hash(sessionId);
 
         return new SessionStarted(
-            PrincipalId: principalId,
+            PrincipalId: identity.Id,
             SessionIdHash: sessionIdHash,
-            IdpSessionId: ticket.Principal.FindFirst("sid")?.Value,
+            IdpSessionId: identity.IdpSessionId,
             CreatedAt: createdAt,
             ExpectedExpiresAt: expiresAt,
             ClientIpAddress: context?.Connection.RemoteIpAddress,
             UserAgent: userAgent,
-            PrincipalPublicId: ticket.Principal.FindFirst("pam_public_id")?.Value,
-            DisplayName: ticket.Principal.FindFirst("name")?.Value,
-            Issuer: ticket.Principal.FindFirst("pam_issuer")?.Value,
-            Subject: ticket.Principal.FindFirst("sub")?.Value,
+            PrincipalPublicId: identity.PublicId.ToString(),
+            DisplayName: identity.DisplayName,
+            Issuer: identity.Issuer,
+            Subject: identity.Subject,
             CorrelationId: context?.TraceIdentifier ?? Guid.NewGuid().ToString("N"));
     }
 }

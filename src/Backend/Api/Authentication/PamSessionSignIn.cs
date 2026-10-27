@@ -1,4 +1,3 @@
-using Application.Sessions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Options;
@@ -31,22 +30,8 @@ internal static class PamSessionSignIn
                 options.ClaimsIssuer = session.ClaimsIssuer;
                 options.LoginPath = session.LoginPath;
                 options.ReturnUrlParameter = session.ReturnUrlParameter;
-                options.Events.OnSigningIn = async context =>
-                {
-                    await session.Events.SigningIn(context);
-                    await EndPreviousSessionAsync(context.HttpContext);
-                };
-                options.Events.OnSignedIn = session.Events.SignedIn;
-                options.Events.OnRedirectToReturnUrl = session.Events.RedirectToReturnUrl;
+                options.EventsType = typeof(PamSignInCookieEvents);
             });
         return builder;
-    }
-
-    private static async Task EndPreviousSessionAsync(HttpContext context)
-    {
-        var previousSession = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        if (!previousSession.Succeeded) return;
-
-        await context.EndPamSessionAsync(SessionEndReason.Reauthentication);
     }
 }

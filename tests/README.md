@@ -102,7 +102,7 @@ cookie settings, ticket protection and session store. The issuing scheme's
 `ICookieManager` adapter ignores incoming cookies and delegates all response writes
 to the standard manager, ensuring sign-in uses `StoreAsync`, never `RenewAsync`.
 
-Before issuing a new session, `OnSigningIn` ends the authenticated previous session
+Before issuing a new session, `PamSignInCookieEvents.SigningIn` ends the authenticated previous session
 through standard `SignOutAsync`, recording `reauthentication` and suppressing any
 pending renewal on that handler. If creation fails, the old cookie may be expired
 but no usable new cookie is issued. The framework owns cookie protection, chunking,
@@ -143,3 +143,16 @@ Framework removal without explicit intent, and cleanup of an unissued session,
 remain storage-only operations. They do not record a user logout. Tests cover all
 three reason codes, operation ordering, storage/audit failures and isolation of the
 sign-out intent from later cleanup in the same request.
+
+## PAM identity claims
+
+`PamClaimTypes` defines the cookie claim names, and `PamClaims` creates and reads
+the typed `PamUserIdentity`. OIDC issuance, cookie validation, `/me` and session
+audit use this shared mapping. Required identity fields are validated together;
+malformed or incomplete identities are rejected. Existing valid ticket claims
+retain their names and ASP.NET name/role semantics.
+
+Both cookie schemes resolve scoped `CookieAuthenticationEvents` through
+`EventsType`. `PamCookieEvents` receives the identity reader through its
+constructor and rejects disabled users or changed roles. `PamSignInCookieEvents`
+initializes the session lifetime and rotates an authenticated previous session.

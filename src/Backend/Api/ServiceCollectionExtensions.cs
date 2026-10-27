@@ -48,6 +48,8 @@ public static class ServiceCollectionExtensions
         IHostEnvironment environment)
     {
         services.AddSingleton<PamSessionLifetime>();
+        services.AddScoped<PamCookieEvents>();
+        services.AddScoped<PamSignInCookieEvents>();
 
         services.AddAuthentication(options =>
         {
@@ -68,17 +70,7 @@ public static class ServiceCollectionExtensions
                 ? CookieSecurePolicy.SameAsRequest
                 : CookieSecurePolicy.Always;
             options.SlidingExpiration = true;
-            options.Events.OnValidatePrincipal = PamPrincipalValidation.ValidateAsync;
-            options.Events.OnRedirectToLogin = context =>
-            {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                return Task.CompletedTask;
-            };
-            options.Events.OnRedirectToAccessDenied = context =>
-            {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                return Task.CompletedTask;
-            };
+            options.EventsType = typeof(PamCookieEvents);
         }).AddPamSessionSignIn().AddOpenIdConnect("oidc", _ => { });
 
         services.AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -90,15 +82,6 @@ public static class ServiceCollectionExtensions
             .Configure<IOptions<PamSessionOptions>>((options, sessionOptions) =>
             {
                 options.ExpireTimeSpan = sessionOptions.Value.IdleTimeout;
-            })
-            .Configure<PamSessionLifetime>((options, sessionLifetime) =>
-            {
-                // Every explicit sign-in starts a new server-side session.
-                options.Events.OnSigningIn = context =>
-                {
-                    sessionLifetime.Initialize(context.Properties);
-                    return Task.CompletedTask;
-                };
             });
 
         services.AddAuthorization();
@@ -127,8 +110,8 @@ public static class ServiceCollectionExtensions
             options.SaveTokens = false;
             options.MapInboundClaims = false;
 
-            options.TokenValidationParameters.NameClaimType = "name";
-            options.TokenValidationParameters.RoleClaimType = "pam_role";
+            options.TokenValidationParameters.NameClaimType = PamClaimTypes.DisplayName;
+            options.TokenValidationParameters.RoleClaimType = PamClaimTypes.Role;
             options.EventsType = typeof(PamOpenIdConnectEvents);
 
             options.RequireHttpsMetadata = !environment.IsDevelopment();
