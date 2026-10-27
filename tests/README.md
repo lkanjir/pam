@@ -50,17 +50,27 @@ dotnet test src/Backend/Backend.sln -m:1
 
 Current coverage focuses on session creation, ledger/audit atomicity, cleanup on
 failure, metadata mapping, Redis ticket protection/TTL, renewal coordination and
-explicit logout through the real endpoint delegate and cookie handler. Logout tests
-exercise both successful persistence and failed audit writes after Redis revocation.
-A TestHost HTTP pipeline uses the production authentication registration and a controlled
-clock to exercise continuous sliding renewal up to the absolute deadline. Tests check
-acceptance at 7:59, rejection at 8:00, capped ledger expiry and Redis TTL, and rejection
-of legacy tickets without absolute-expiration metadata. No sleeps or Keycloak calls
-are needed for these checks.
+explicit logout. Cookie tests are split into sign-in, rotation, access changes,
+lifetime and logout scenarios. They share PostgreSQL/Redis collection fixtures,
+with a separate database per test and fresh random session IDs.
 
-They do not exercise the full authorization/antiforgery middleware pipeline or
-Keycloak/OIDC browser flows. Natural-expiration reconciliation is outside the
-current coverage.
+`SessionTestHost` uses the same `AddPamApi` service registrations and `UsePamApi`
+HTTP pipeline as `Program`. Test configuration supplies the isolated database;
+only the Redis connection, clock and Data Protection provider are replaced. A
+local sign-in endpoint substitutes for the external OIDC flow. `/api/me` and
+`/api/auth/*` are the actual application endpoints with authorization and the
+antiforgery filter enabled. The cookie helper preserves both the session and
+antiforgery cookies when applying response headers.
+
+`LogoutPipelineTests` verifies rejection of anonymous requests and missing/invalid
+antiforgery tokens, and successful logout with a valid token, including failed
+audit writes and replay of the revoked cookie. Direct handler/endpoint tests
+remain for persistence failures and termination-feature cleanup within one context.
+Lifetime tests check acceptance at 7:59, rejection at 8:00, capped ledger expiry
+and Redis TTL, and rejection of legacy tickets without expiration metadata.
+
+Full Keycloak/OIDC browser flows and natural-expiration reconciliation remain
+outside the current coverage. No sleeps or Keycloak calls are needed.
 
 ## Absolute session lifetime
 
