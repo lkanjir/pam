@@ -1,5 +1,6 @@
 using Application.Sessions;
 using Infrastructure.Authentication;
+using Infrastructure.Sessions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 
@@ -93,32 +94,15 @@ public sealed class PamTicketStore(
 
     public async Task RemoveAsync(string key, HttpContext httpContext, CancellationToken cancellationToken)
     {
-        if (!SessionIdentifier.IsValid(key)) return;
-
-        await ticketStore.RemoveAsync(key);
-
-        var termination = httpContext.Features.Get<SessionTermination>();
-        if (termination is null) return;
-
-        var sessionIdHash = SessionIdentifier.Hash(key);
-
-        try
+        if (PamSessionSignOut.GetEndReason(httpContext) is not { } reason)
         {
-            await using var scope = scopeFactory.CreateAsyncScope();
-            var ledgerWriter = scope.ServiceProvider.GetRequiredService<ISessionLedgerWriter>();
+            // Framework cleanup, without an explicit session-ending intent.
+            await RemoveAsync(key);
+            return;
+        }
 
-            await ledgerWriter.RecordEndedAsync(sessionIdHash, timeProvider.GetUtcNow(), termination.Reason,
-                CancellationToken.None);
-        }
-        catch (Exception exception)
-        {
-            logger.LogError(
-                "Session was revoked, but its ledger/audit end could not be persisted. " +
-                "Session hash: {SessionIdHash}; correlation: {CorrelationId}; " +
-                "error type: {ErrorType}.",
-                sessionIdHash,
-                httpContext.TraceIdentifier,
-                exception.GetType().Name);
-        }
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var terminator = scope.ServiceProvider.GetRequiredService<SessionTerminator>();
+        await terminator.EndSessionAsync(key, reason, httpContext.TraceIdentifier);
     }
 }

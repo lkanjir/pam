@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using Application.Identity;
-using Microsoft.AspNetCore.Authentication;
+using Application.Sessions;
 using Microsoft.AspNetCore.Authentication.Cookies;
 
 namespace Api.Authentication;
@@ -26,7 +26,6 @@ internal static class PamPrincipalValidation
 
         // Revoke before returning: a pending sliding renewal must not restore access.
         context.RejectPrincipal();
-        context.HttpContext.Features.Set(new SessionTermination("access_changed"));
-        await context.HttpContext.SignOutAsync(context.Scheme.Name);
+        await context.HttpContext.EndPamSessionAsync(SessionEndReason.AccessChanged, context.Scheme.Name);
     }
 }
