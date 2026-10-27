@@ -1,11 +1,12 @@
 using Application.Sessions;
+using Infrastructure.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 
 namespace Api.Authentication;
 
 public sealed class PamTicketStore(
-    RedisTicketStore redisStore,
+    ISessionTicketStore ticketStore,
     IServiceScopeFactory scopeFactory,
     TimeProvider timeProvider,
     PamSessionLifetime sessionLifetime,
@@ -32,7 +33,7 @@ public sealed class PamTicketStore(
         await using var scope = scopeFactory.CreateAsyncScope();
 
         var ledgerWriter = scope.ServiceProvider.GetRequiredService<ISessionLedgerWriter>();
-        var sessionId = await redisStore.StoreAsync(ticket);
+        var sessionId = await ticketStore.StoreAsync(ticket);
 
         try
         {
@@ -52,13 +53,13 @@ public sealed class PamTicketStore(
     {
         try
         {
-            await redisStore.RemoveAsync(sessionId);
+            await ticketStore.RemoveAsync(sessionId);
         }
         catch (Exception ex)
         {
             logger.LogError("Failed to remove an unissued session. " +
                             "Error type: {ErrorType}; correlation: {CorrelationId}. " +
-                            "The Redis entry will expire through its TTL.",
+                            "The stored ticket will expire through its TTL.",
                 ex.GetType().Name,
                 correlationId);
         }
@@ -74,7 +75,7 @@ public sealed class PamTicketStore(
         await using var scope = scopeFactory.CreateAsyncScope();
         var ledgerWriter = scope.ServiceProvider.GetRequiredService<ISessionLedgerWriter>();
 
-        var renewed = await redisStore.TryRenewAsync(key, ticket);
+        var renewed = await ticketStore.TryRenewAsync(key, ticket);
         if (!renewed) return;
 
         var expiresAt = ticket.Properties.ExpiresUtc!.Value;
@@ -84,17 +85,17 @@ public sealed class PamTicketStore(
 
     public async Task<AuthenticationTicket?> RetrieveAsync(string key)
     {
-        var ticket = await redisStore.RetrieveAsync(key);
+        var ticket = await ticketStore.RetrieveAsync(key);
         return ticket is not null && sessionLifetime.IsValid(ticket.Properties) ? ticket : null;
     }
 
-    public Task RemoveAsync(string key) => redisStore.RemoveAsync(key);
+    public Task RemoveAsync(string key) => ticketStore.RemoveAsync(key);
 
     public async Task RemoveAsync(string key, HttpContext httpContext, CancellationToken cancellationToken)
     {
         if (!SessionIdentifier.IsValid(key)) return;
 
-        await redisStore.RemoveAsync(key);
+        await ticketStore.RemoveAsync(key);
 
         var termination = httpContext.Features.Get<SessionTermination>();
         if (termination is null) return;

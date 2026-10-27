@@ -1,17 +1,17 @@
 using Backend.Tests.Support;
 using FakeItEasy;
-using StackExchange.Redis;
+using Microsoft.AspNetCore.Authentication;
 
 namespace Backend.UnitTests.Authentication;
 
 public sealed class PamTicketStoreRenewalTests
 {
     [Fact]
-    public async Task RenewAsync_AfterAbsoluteDeadline_DoesNotWriteRedis()
+    public async Task RenewAsync_AfterAbsoluteDeadline_DoesNotWriteStorage()
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
-        var sessionId = await fixture.SeedRenewableSessionAsync();
+        var sessionId = TicketStoreFixture.SessionId;
         var ticket = fixture.StartedTicket();
         fixture.Clock.Now = fixture.Clock.Now.AddHours(8);
         ticket.Properties.ExpiresUtc = fixture.Clock.Now.AddMinutes(30);
@@ -20,35 +20,32 @@ public sealed class PamTicketStoreRenewalTests
         await fixture.Store.RenewAsync(sessionId, ticket);
 
         // Assert
-        A.CallTo(() => fixture.Database.ScriptEvaluateAsync(A<string>._, A<RedisKey[]>._,
-            A<RedisValue[]>._, CommandFlags.None)).MustNotHaveHappened();
+        A.CallTo(() => fixture.Tickets.TryRenewAsync(sessionId, A<AuthenticationTicket>._)).MustNotHaveHappened();
     }
 
     [Fact]
-    public async Task RenewAsync_WithoutAbsoluteDeadline_DoesNotWriteRedis()
+    public async Task RenewAsync_WithoutAbsoluteDeadline_DoesNotWriteStorage()
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
-        var sessionId = await fixture.SeedRenewableSessionAsync();
+        var sessionId = TicketStoreFixture.SessionId;
         var ticket = SessionTestData.Ticket(fixture.Clock.Now);
 
         // Act
         await fixture.Store.RenewAsync(sessionId, ticket);
 
         // Assert
-        A.CallTo(() => fixture.Database.ScriptEvaluateAsync(A<string>._, A<RedisKey[]>._,
-            A<RedisValue[]>._, CommandFlags.None)).MustNotHaveHappened();
+        A.CallTo(() => fixture.Tickets.TryRenewAsync(sessionId, A<AuthenticationTicket>._)).MustNotHaveHappened();
     }
 
     [Fact]
-    public async Task RenewAsync_WhenRedisSucceeds_UpdatesLedgerExpiry()
+    public async Task RenewAsync_WhenStorageSucceeds_UpdatesLedgerExpiry()
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
-        var sessionId = await fixture.SeedRenewableSessionAsync();
+        var sessionId = TicketStoreFixture.SessionId;
         var ticket = fixture.StartedTicket();
-        A.CallTo(() => fixture.Database.ScriptEvaluateAsync(A<string>._, A<RedisKey[]>._,
-            A<RedisValue[]>._, CommandFlags.None)).Returns(RedisResult.Create((RedisValue)1));
+        A.CallTo(() => fixture.Tickets.TryRenewAsync(sessionId, A<AuthenticationTicket>._)).Returns(true);
 
         // Act
         await fixture.Store.RenewAsync(sessionId, ticket);
@@ -59,14 +56,14 @@ public sealed class PamTicketStoreRenewalTests
     }
 
     [Fact]
-    public async Task RenewAsync_WhenRedisSessionIsMissing_DoesNotUpdateLedger()
+    public async Task RenewAsync_WhenStorageRejectsRenewal_DoesNotUpdateLedger()
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
-        var sessionId = await fixture.SeedRenewableSessionAsync();
+        var sessionId = TicketStoreFixture.SessionId;
         var ticket = fixture.StartedTicket();
-        A.CallTo(() => fixture.Database.StringGetAsync(A<RedisKey>._, CommandFlags.None))
-            .Returns(RedisValue.Null);
+        A.CallTo(() => fixture.Tickets.TryRenewAsync(sessionId, A<AuthenticationTicket>._))
+            .Returns(false);
 
         // Act
         await fixture.Store.RenewAsync(sessionId, ticket);
@@ -77,13 +74,13 @@ public sealed class PamTicketStoreRenewalTests
     }
 
     [Fact]
-    public async Task RenewAsync_WhenRedisFails_DoesNotUpdateLedger()
+    public async Task RenewAsync_WhenStorageFails_DoesNotUpdateLedger()
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
-        var sessionId = await fixture.SeedRenewableSessionAsync();
-        A.CallTo(() => fixture.Database.ScriptEvaluateAsync(A<string>._, A<RedisKey[]>._,
-            A<RedisValue[]>._, CommandFlags.None)).ThrowsAsync(new InvalidOperationException("Redis unavailable"));
+        var sessionId = TicketStoreFixture.SessionId;
+        A.CallTo(() => fixture.Tickets.TryRenewAsync(sessionId, A<AuthenticationTicket>._))
+            .ThrowsAsync(new InvalidOperationException("Storage unavailable"));
 
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -99,10 +96,9 @@ public sealed class PamTicketStoreRenewalTests
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
-        var sessionId = await fixture.SeedRenewableSessionAsync();
+        var sessionId = TicketStoreFixture.SessionId;
         var failure = new InvalidOperationException("Database unavailable");
-        A.CallTo(() => fixture.Database.ScriptEvaluateAsync(A<string>._, A<RedisKey[]>._,
-            A<RedisValue[]>._, CommandFlags.None)).Returns(RedisResult.Create((RedisValue)1));
+        A.CallTo(() => fixture.Tickets.TryRenewAsync(sessionId, A<AuthenticationTicket>._)).Returns(true);
         A.CallTo(() => fixture.Ledger.RecordRenewedAsync(A<string>._,
             A<DateTimeOffset>._, A<CancellationToken>._)).ThrowsAsync(failure);
 
@@ -119,9 +115,8 @@ public sealed class PamTicketStoreRenewalTests
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
-        var sessionId = await fixture.SeedRenewableSessionAsync();
-        A.CallTo(() => fixture.Database.ScriptEvaluateAsync(A<string>._, A<RedisKey[]>._,
-            A<RedisValue[]>._, CommandFlags.None)).Returns(RedisResult.Create((RedisValue)1));
+        var sessionId = TicketStoreFixture.SessionId;
+        A.CallTo(() => fixture.Tickets.TryRenewAsync(sessionId, A<AuthenticationTicket>._)).Returns(true);
         A.CallTo(() => fixture.Ledger.RecordRenewedAsync(A<string>._,
             A<DateTimeOffset>._, A<CancellationToken>._))
             .ThrowsAsync(new InvalidOperationException("Database unavailable"));
@@ -131,6 +126,6 @@ public sealed class PamTicketStoreRenewalTests
             fixture.Store.RenewAsync(sessionId, fixture.StartedTicket()));
 
         // Assert
-        A.CallTo(() => fixture.Database.KeyDeleteAsync(A<RedisKey>._, CommandFlags.None)).MustNotHaveHappened();
+        A.CallTo(() => fixture.Tickets.RemoveAsync(sessionId)).MustNotHaveHappened();
     }
 }

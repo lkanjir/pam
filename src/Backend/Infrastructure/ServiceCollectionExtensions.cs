@@ -1,4 +1,5 @@
 using Application.Identity;
+using Infrastructure.Authentication;
 using Application.Sessions;
 using Infrastructure.Identity;
 using Infrastructure.Persistence;
@@ -64,6 +65,8 @@ public static class ServiceCollectionExtensions
 
             return ConnectionMultiplexer.Connect(redisConfiguration);
         });
+
+        services.AddSingleton<ISessionTicketStore, RedisTicketStore>();
 
         services.AddDataProtection().SetApplicationName("pam");
         services.AddOptions<KeyManagementOptions>().Configure<IConnectionMultiplexer>((options, redis) =>

@@ -1,4 +1,6 @@
 using Backend.Tests.Support;
+using Infrastructure.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 using FakeItEasy;
 using StackExchange.Redis;
 
@@ -13,7 +15,7 @@ public sealed class RedisTicketStoreTests
     public async Task RetrieveAsync_WithInvalidIdentifier_DoesNotQueryRedis(string? id)
     {
         // Arrange
-        using var fixture = new TicketStoreFixture();
+        var fixture = new RedisStoreFixture();
 
         // Act
         await fixture.Redis.RetrieveAsync(id!);
@@ -26,7 +28,7 @@ public sealed class RedisTicketStoreTests
     public async Task StoreAsync_WithoutExpiration_RejectsTicket()
     {
         // Arrange
-        using var fixture = new TicketStoreFixture();
+        var fixture = new RedisStoreFixture();
         var ticket = SessionTestData.Ticket(fixture.Clock.Now);
         ticket.Properties.ExpiresUtc = null;
 
@@ -41,7 +43,7 @@ public sealed class RedisTicketStoreTests
     public async Task StoreAsync_WithExpiredTicket_RejectsTicket()
     {
         // Arrange
-        using var fixture = new TicketStoreFixture();
+        var fixture = new RedisStoreFixture();
         var ticket = SessionTestData.Ticket(fixture.Clock.Now);
         ticket.Properties.ExpiresUtc = fixture.Clock.Now;
 
@@ -51,4 +53,18 @@ public sealed class RedisTicketStoreTests
         // Assert
         Assert.IsType<InvalidOperationException>(error);
     }
+    private sealed class RedisStoreFixture
+    {
+        public IDatabase Database { get; } = A.Fake<IDatabase>();
+        public TestTimeProvider Clock { get; } = new();
+        public RedisTicketStore Redis { get; }
+
+        public RedisStoreFixture()
+        {
+            var connection = A.Fake<IConnectionMultiplexer>();
+            A.CallTo(() => connection.GetDatabase(A<int>._, A<object>._)).Returns(Database);
+            Redis = new RedisTicketStore(connection, new EphemeralDataProtectionProvider(), Clock);
+        }
+    }
+
 }

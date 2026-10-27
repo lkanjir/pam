@@ -86,7 +86,8 @@ lookup failures fail the request instead of accepting stale authorization data.
 ## Concurrent renewal
 
 Redis renewal compares the expiration in the protected current ticket and uses an
-atomic compare-and-set to replace that exact payload. Older/equal expirations are
+StackExchange.Redis conditional transaction (`Condition.StringEqual`) to atomically
+replace that exact payload and its TTL. There are no application-owned Lua scripts. Older/equal expirations are
 ignored; removal or expiration between the read and write cannot recreate a session.
 Contention is retried at most eight times, then leaves the winning ticket intact.
 The ledger is extended only after a successful Redis update. Regression tests cover
@@ -108,3 +109,16 @@ but no usable new cookie is issued. The framework owns cookie protection, chunki
 persistence, cache headers, events and redirects; PAM does not construct its internal
 session-ID claim. Tests cover rotation after authentication/with pending renewal,
 old-cookie replay, identity changes, audit failures, persistence and redirects.
+
+## Ticket storage boundary
+
+`PamTicketStore` is the ASP.NET `ITicketStore` adapter coordinating lifetime and audit.
+It depends on `ISessionTicketStore`, the small authentication-storage contract in
+Infrastructure. `RedisTicketStore` implements that contract with Data Protection
+and Redis. The contract uses ASP.NET authentication tickets, so it stays outside
+the framework-independent Application and Domain projects.
+
+Coordination unit tests fake `ISessionTicketStore` and `ISessionLedgerWriter`; they
+do not configure Redis commands, serialization or cryptography. Storage tests
+exercise the Redis implementation separately, including conditional renewal, TTL,
+concurrent removal and rejection of expired stored tickets.

@@ -2,7 +2,7 @@ using Application.Sessions;
 using Backend.Tests.Support;
 using FakeItEasy;
 using Microsoft.AspNetCore.Http;
-using StackExchange.Redis;
+using Microsoft.AspNetCore.Authentication;
 
 namespace Backend.UnitTests.Authentication;
 
@@ -34,16 +34,12 @@ public sealed class PamTicketStoreTests
         using var fixture = new TicketStoreFixture();
         A.CallTo(() => fixture.Ledger.RecordStartedAsync(A<SessionStarted>._, A<CancellationToken>._))
             .ThrowsAsync(new InvalidOperationException("Database unavailable"));
-        RedisKey storedKey = default;
-        A.CallTo(() => fixture.Database.StringSetAsync(A<RedisKey>._, A<RedisValue>._,
-                A<TimeSpan?>._, When.NotExists))
-            .Invokes(call => storedKey = call.GetArgument<RedisKey>(0)).Returns(true);
 
         // Act
         await Record.ExceptionAsync(() => fixture.Store.StoreAsync(SessionTestData.Ticket(fixture.Clock.Now)));
 
         // Assert
-        A.CallTo(() => fixture.Database.KeyDeleteAsync(storedKey, CommandFlags.None)).MustHaveHappenedOnceExactly();
+        A.CallTo(() => fixture.Tickets.RemoveAsync(TicketStoreFixture.SessionId)).MustHaveHappenedOnceExactly();
     }
 
     [Fact]
@@ -54,8 +50,8 @@ public sealed class PamTicketStoreTests
         var original = new InvalidOperationException("Database unavailable");
         A.CallTo(() => fixture.Ledger.RecordStartedAsync(A<SessionStarted>._, A<CancellationToken>._))
             .ThrowsAsync(original);
-        A.CallTo(() => fixture.Database.KeyDeleteAsync(A<RedisKey>._, CommandFlags.None))
-            .ThrowsAsync(new InvalidOperationException("Redis unavailable"));
+        A.CallTo(() => fixture.Tickets.RemoveAsync(TicketStoreFixture.SessionId))
+            .ThrowsAsync(new InvalidOperationException("Storage unavailable"));
 
         // Act
         var error = await Record.ExceptionAsync(() => fixture.Store.StoreAsync(SessionTestData.Ticket(fixture.Clock.Now)));
@@ -65,12 +61,12 @@ public sealed class PamTicketStoreTests
     }
 
     [Fact]
-    public async Task StoreAsync_WhenRedisFails_DoesNotWriteLedger()
+    public async Task StoreAsync_WhenStorageFails_DoesNotWriteLedger()
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
-        A.CallTo(() => fixture.Database.StringSetAsync(A<RedisKey>._, A<RedisValue>._,
-            A<TimeSpan?>._, When.NotExists)).ThrowsAsync(new InvalidOperationException("Redis unavailable"));
+        A.CallTo(() => fixture.Tickets.StoreAsync(A<AuthenticationTicket>._))
+            .ThrowsAsync(new InvalidOperationException("Storage unavailable"));
 
         // Act
         await Record.ExceptionAsync(() => fixture.Store.StoreAsync(SessionTestData.Ticket(fixture.Clock.Now)));
@@ -81,7 +77,7 @@ public sealed class PamTicketStoreTests
     }
 
     [Fact]
-    public async Task StoreAsync_WhenCancelledAfterRedisWrite_StillAttemptsCleanup()
+    public async Task StoreAsync_WhenCancelledAfterStorageWrite_StillAttemptsCleanup()
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
@@ -93,7 +89,7 @@ public sealed class PamTicketStoreTests
         await Record.ExceptionAsync(() => fixture.Store.StoreAsync(SessionTestData.Ticket(fixture.Clock.Now), cancellation.Token));
 
         // Assert
-        A.CallTo(() => fixture.Database.KeyDeleteAsync(A<RedisKey>._, CommandFlags.None)).MustHaveHappenedOnceExactly();
+        A.CallTo(() => fixture.Tickets.RemoveAsync(TicketStoreFixture.SessionId)).MustHaveHappenedOnceExactly();
     }
 
     [Fact]

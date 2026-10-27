@@ -1,4 +1,4 @@
-using Api.Authentication;
+using Infrastructure.Authentication;
 using Backend.IntegrationTests.Fixtures;
 using Backend.Tests.Support;
 using Microsoft.AspNetCore.DataProtection;
@@ -7,6 +7,41 @@ namespace Backend.IntegrationTests.Sessions;
 
 public sealed class RedisTicketStoreTests(RedisFixture redis) : IClassFixture<RedisFixture>
 {
+    [Fact]
+    public async Task TryRenewAsync_ConcurrentRemoval_DoesNotResurrectSession()
+    {
+        // Arrange
+        var clock = new TestTimeProvider();
+        var store = new RedisTicketStore(redis.Connection, new EphemeralDataProtectionProvider(), clock);
+        var id = await store.StoreAsync(SessionTestData.Ticket(clock.Now));
+        var renewal = SessionTestData.Ticket(clock.Now.AddMinutes(16));
+        clock.Now = clock.Now.AddMinutes(16);
+
+        // Act
+        await Task.WhenAll(store.TryRenewAsync(id, renewal), store.RemoveAsync(id));
+
+        // Assert
+        Assert.False(await redis.Connection.GetDatabase().KeyExistsAsync(SessionTestData.RedisKey(id)));
+    }
+
+    [Fact]
+    public async Task TryRenewAsync_WithExpiredStoredTicket_DoesNotReviveSession()
+    {
+        // Arrange
+        var clock = new TestTimeProvider();
+        var store = new RedisTicketStore(redis.Connection, new EphemeralDataProtectionProvider(), clock);
+        var id = await store.StoreAsync(SessionTestData.Ticket(clock.Now));
+        clock.Now = clock.Now.AddMinutes(30);
+        var renewal = SessionTestData.Ticket(clock.Now);
+
+        // Act
+        var renewed = await store.TryRenewAsync(id, renewal);
+
+        // Assert
+        Assert.False(renewed);
+        Assert.Null(await store.RetrieveAsync(id));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -24,11 +59,11 @@ public sealed class RedisTicketStoreTests(RedisFixture redis) : IClassFixture<Re
 
         // Act
         if (concurrent)
-            await Task.WhenAll(first.RenewAsync(id, newer), second.RenewAsync(id, older));
+            await Task.WhenAll(first.TryRenewAsync(id, newer), second.TryRenewAsync(id, older));
         else
         {
-            await first.RenewAsync(id, newer);
-            await second.RenewAsync(id, older);
+            await first.TryRenewAsync(id, newer);
+            await second.TryRenewAsync(id, older);
         }
 
         // Assert
@@ -97,7 +132,7 @@ public sealed class RedisTicketStoreTests(RedisFixture redis) : IClassFixture<Re
         await store.RemoveAsync(id);
 
         // Act
-        await store.RenewAsync(id, ticket);
+        await store.TryRenewAsync(id, ticket);
 
         // Assert
         Assert.False(await redis.Connection.GetDatabase().KeyExistsAsync(SessionTestData.RedisKey(id)));
