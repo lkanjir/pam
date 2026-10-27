@@ -82,3 +82,12 @@ Cookie authentication rechecks the local principal and role assignments on every
 request. Disabled or missing principals, identity mismatches and changed role sets
 revoke the session with reason `access_changed`; a new sign-in is required. Database
 lookup failures fail the request instead of accepting stale authorization data.
+
+## Concurrent renewal
+
+Redis renewal compares the expiration in the protected current ticket and uses an
+atomic compare-and-set to replace that exact payload. Older/equal expirations are
+ignored; removal or expiration between the read and write cannot recreate a session.
+Contention is retried at most eight times, then leaves the winning ticket intact.
+The ledger is extended only after a successful Redis update. Regression tests cover
+out-of-order renewals across two store instances, concurrent requests and TTL.

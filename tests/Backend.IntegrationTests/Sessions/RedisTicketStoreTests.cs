@@ -7,6 +7,37 @@ namespace Backend.IntegrationTests.Sessions;
 
 public sealed class RedisTicketStoreTests(RedisFixture redis) : IClassFixture<RedisFixture>
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RenewAsync_WithOutOfOrderRequests_PreservesLatestExpiryAndTtl(bool concurrent)
+    {
+        // Arrange
+        var clock = new TestTimeProvider();
+        var protection = new EphemeralDataProtectionProvider();
+        var first = new RedisTicketStore(redis.Connection, protection, clock);
+        var second = new RedisTicketStore(redis.Connection, protection, clock);
+        var id = await first.StoreAsync(SessionTestData.Ticket(clock.Now));
+        var older = SessionTestData.Ticket(clock.Now.AddMinutes(16));
+        var newer = SessionTestData.Ticket(clock.Now.AddMinutes(20));
+        clock.Now = clock.Now.AddMinutes(20);
+
+        // Act
+        if (concurrent)
+            await Task.WhenAll(first.RenewAsync(id, newer), second.RenewAsync(id, older));
+        else
+        {
+            await first.RenewAsync(id, newer);
+            await second.RenewAsync(id, older);
+        }
+
+        // Assert
+        var result = await first.RetrieveAsync(id);
+        Assert.Equal(newer.Properties.ExpiresUtc, result!.Properties.ExpiresUtc);
+        var ttl = await redis.Connection.GetDatabase().KeyTimeToLiveAsync(SessionTestData.RedisKey(id));
+        Assert.InRange(ttl ?? TimeSpan.Zero, TimeSpan.FromMinutes(29), TimeSpan.FromMinutes(30));
+    }
+
     [Fact]
     public async Task StoreAsync_TicketCanBeRetrievedByAnotherStoreWithSharedProtectionKeys()
     {

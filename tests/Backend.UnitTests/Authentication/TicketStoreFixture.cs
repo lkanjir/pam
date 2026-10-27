@@ -48,5 +48,18 @@ internal sealed class TicketStoreFixture : IDisposable
         return ticket;
     }
 
+    public async Task<string> SeedRenewableSessionAsync()
+    {
+        var existing = StartedTicket();
+        existing.Properties.ExpiresUtc = existing.Properties.ExpiresUtc!.Value.AddMinutes(-1);
+        RedisValue payload = default;
+        A.CallTo(() => Database.StringSetAsync(A<RedisKey>._, A<RedisValue>._,
+                A<TimeSpan?>._, When.NotExists))
+            .Invokes(call => payload = call.GetArgument<RedisValue>(1)).Returns(true);
+        var id = await Redis.StoreAsync(existing);
+        A.CallTo(() => Database.StringGetAsync(A<RedisKey>._, CommandFlags.None)).Returns(payload);
+        return id;
+    }
+
     public void Dispose() => _services.Dispose();
 }
