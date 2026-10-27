@@ -91,3 +91,20 @@ ignored; removal or expiration between the read and write cannot recreate a sess
 Contention is retried at most eight times, then leaves the winning ticket intact.
 The ledger is extended only after a successful Redis update. Regression tests cover
 out-of-order renewals across two store instances, concurrent requests and TTL.
+
+## Cookie issuance and rotation
+
+Both cookie schemes use the framework's `CookieAuthenticationHandler`. `Cookies`
+authenticates requests, slides expiration and handles logout. Its `ForwardSignIn`
+routes explicit sign-ins (including OIDC) to `PamSessionSignIn`, which shares the
+cookie settings, ticket protection and session store. The issuing scheme's
+`ICookieManager` adapter ignores incoming cookies and delegates all response writes
+to the standard manager, ensuring sign-in uses `StoreAsync`, never `RenewAsync`.
+
+Before issuing a new session, `OnSigningIn` ends the authenticated previous session
+through standard `SignOutAsync`, recording `reauthentication` and suppressing any
+pending renewal on that handler. If creation fails, the old cookie may be expired
+but no usable new cookie is issued. The framework owns cookie protection, chunking,
+persistence, cache headers, events and redirects; PAM does not construct its internal
+session-ID claim. Tests cover rotation after authentication/with pending renewal,
+old-cookie replay, identity changes, audit failures, persistence and redirects.
