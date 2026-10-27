@@ -69,9 +69,16 @@ The deadline is initialized at sign-in/session creation and preserved by sliding
 renewal. Renewal limits `ExpiresUtc` before updating Redis and the session ledger.
 Retrieval independently rejects tickets past their deadline or without valid metadata.
 Deploying this change invalidates existing tickets without the metadata; users must
-sign in again. A successful new OIDC sign-in can start a new lifetime, including when
-the cookie handler reuses an existing session ID. Keycloak SSO may make that sign-in
+sign in again. A successful new OIDC sign-in can start a new lifetime, with a fresh session ID. The previous session is revoked and ended with reason
+`reauthentication`; the new session and its identity receive a separate start audit. Keycloak SSO may make that sign-in
 silent; this is not a requirement to re-enter credentials every eight hours.
 
 Expiry enforcement does not itself write an expired-session audit or fill `EndedAt`.
 That remains separate work from enforcing access expiration.
+
+## Access changes
+
+Cookie authentication rechecks the local principal and role assignments on every
+request. Disabled or missing principals, identity mismatches and changed role sets
+revoke the session with reason `access_changed`; a new sign-in is required. Database
+lookup failures fail the request instead of accepting stale authorization data.
