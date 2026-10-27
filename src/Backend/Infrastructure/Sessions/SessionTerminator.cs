@@ -13,7 +13,8 @@ public sealed class SessionTerminator(
     public async Task EndSessionAsync(string sessionId, SessionEndReason reason, string? correlationId)
     {
         var reasonCode = reason.ToCode();
-        if (!SessionIdentifier.IsValid(sessionId)) return;
+        if (!SessionIdentifier.IsValid(sessionId))
+            return;
 
         // Revocation must succeed before recording an end. Once revoked, audit
         // persistence must not be cancelled by the HTTP client disconnecting.

@@ -71,13 +71,15 @@ public sealed class PamTicketStore(
     public async Task RenewAsync(string key, AuthenticationTicket ticket, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        if (!sessionLifetime.TryLimitExpiration(ticket.Properties)) return;
+        if (!sessionLifetime.TryLimitExpiration(ticket.Properties))
+            return;
 
         await using var scope = scopeFactory.CreateAsyncScope();
         var ledgerWriter = scope.ServiceProvider.GetRequiredService<ISessionLedgerWriter>();
 
         var renewed = await ticketStore.TryRenewAsync(key, ticket);
-        if (!renewed) return;
+        if (!renewed)
+            return;
 
         var expiresAt = ticket.Properties.ExpiresUtc!.Value;
 

@@ -17,9 +17,9 @@ public class PamDbContext : DbContext
     public DbSet<Entitlement> Entitlements => Set<Entitlement>();
     public DbSet<EligibilityRule> EligibilityRules => Set<EligibilityRule>();
     public DbSet<AccessRequest> AccessRequests => Set<AccessRequest>();
-    public DbSet<PolicyEvaluation>  PolicyEvaluations => Set<PolicyEvaluation>();
-    public DbSet<AuditEvent>  AuditEvents => Set<AuditEvent>();
-    
+    public DbSet<PolicyEvaluation> PolicyEvaluations => Set<PolicyEvaluation>();
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

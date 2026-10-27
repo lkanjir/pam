@@ -27,7 +27,7 @@ public static class AuthenticationEndpoints
             await context.EndPamSessionAsync(SessionEndReason.Logout);
             return TypedResults.NoContent();
         });
-        
+
         return endpoints;
     }
 
@@ -35,7 +35,8 @@ public static class AuthenticationEndpoints
     {
         context.Response.Headers.CacheControl = "no-store";
 
-        if (!PamClaims.TryRead(user, out var identity)) return TypedResults.Unauthorized();
+        if (!PamClaims.TryRead(user, out var identity))
+            return TypedResults.Unauthorized();
         var response = new CurrentUserResponse(identity.PublicId, identity.DisplayName, [.. identity.Roles]);
 
         return TypedResults.Ok(response);

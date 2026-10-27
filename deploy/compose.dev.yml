@@ -145,8 +145,8 @@ services:
 
   migrator:
     build:
-      context: ../src/Backend
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: src/Backend/Dockerfile
       target: migrator
     environment:
       DB_HOST: postgres
@@ -161,8 +161,8 @@ services:
 
   api:
     build:
-      context: ../src/Backend
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: src/Backend/Dockerfile
       target: final
 
     depends_on:

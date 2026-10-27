@@ -34,7 +34,8 @@ public sealed class PamClaimsTests
     {
         var claims = SessionTestData.Ticket(DateTimeOffset.UtcNow).Principal;
         var source = (ClaimsIdentity)claims.Identity!;
-        foreach (var claim in source.FindAll("sid").ToArray()) source.RemoveClaim(claim);
+        foreach (var claim in source.FindAll("sid").ToArray())
+            source.RemoveClaim(claim);
 
         Assert.True(PamClaims.TryRead(claims, out var identity));
         Assert.Equal("Ana Horvat", identity.DisplayName);
@@ -60,7 +61,8 @@ public sealed class PamClaimsTests
         var claims = SessionTestData.Ticket(DateTimeOffset.UtcNow).Principal;
         var source = (ClaimsIdentity)claims.Identity!;
         source.RemoveClaim(source.FindFirst(type));
-        if (value is not null) source.AddClaim(new Claim(type, value));
+        if (value is not null)
+            source.AddClaim(new Claim(type, value));
 
         Assert.False(PamClaims.TryRead(claims, out var identity));
         Assert.Null(identity);

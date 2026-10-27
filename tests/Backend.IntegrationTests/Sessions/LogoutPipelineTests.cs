@@ -45,7 +45,8 @@ public sealed class LogoutPipelineTests(PostgresFixture postgres, RedisFixture r
         using var antiforgery = await client.GetAsync("/api/auth/antiforgery");
         antiforgery.EnsureSuccessStatusCode();
         UpdateCookie(client, antiforgery);
-        if (token is not null) client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", token);
+        if (token is not null)
+            client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", token);
 
         // Act
         using var response = await client.PostAsync("/api/auth/logout", null);
@@ -79,7 +80,8 @@ public sealed class LogoutPipelineTests(PostgresFixture postgres, RedisFixture r
         var token = await antiforgery.Content.ReadFromJsonAsync<AntiforgeryTokenResponse>();
         UpdateCookie(client, antiforgery);
         client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", token!.RequestToken);
-        if (auditFails) await RejectLogoutAuditAsync(database);
+        if (auditFails)
+            await RejectLogoutAuditAsync(database);
         clock.Now = clock.Now.AddMinutes(16); // Logout must suppress pending sliding renewal.
 
         // Act

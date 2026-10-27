@@ -33,7 +33,8 @@ public sealed class RedisTicketStore : ISessionTicketStore
 
             var stored = await _database.StringSetAsync(redisKey, payload, ttl, When.NotExists);
 
-            if (stored) return sessionId;
+            if (stored)
+                return sessionId;
         }
 
         throw new InvalidOperationException("Unable to allocate unique session identifier.");
@@ -41,7 +42,8 @@ public sealed class RedisTicketStore : ISessionTicketStore
 
     public async Task<bool> TryRenewAsync(string key, AuthenticationTicket ticket)
     {
-        if (!SessionIdentifier.IsValid(key)) return false;
+        if (!SessionIdentifier.IsValid(key))
+            return false;
 
         var redisKey = GetRedisKey(key);
         var payload = Protect(ticket, redisKey);
@@ -70,7 +72,8 @@ public sealed class RedisTicketStore : ISessionTicketStore
 
     public async Task<AuthenticationTicket?> RetrieveAsync(string key)
     {
-        if (!SessionIdentifier.IsValid(key)) return null;
+        if (!SessionIdentifier.IsValid(key))
+            return null;
 
         var redisKey = GetRedisKey(key);
         var value = await _database.StringGetAsync(redisKey);
@@ -82,7 +85,8 @@ public sealed class RedisTicketStore : ISessionTicketStore
 
     private AuthenticationTicket? Unprotect(RedisValue value, string redisKey)
     {
-        if (value.IsNull) return null;
+        if (value.IsNull)
+            return null;
         try
         {
             var serialized = _protector.CreateProtector(redisKey).Unprotect(value!);
@@ -96,7 +100,8 @@ public sealed class RedisTicketStore : ISessionTicketStore
 
     public async Task RemoveAsync(string key)
     {
-        if (!SessionIdentifier.IsValid(key)) return;
+        if (!SessionIdentifier.IsValid(key))
+            return;
 
         await _database.KeyDeleteAsync(GetRedisKey(key));
     }

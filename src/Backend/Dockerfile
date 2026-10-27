@@ -1,16 +1,20 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# Copy project files first so dependency restore can be cached.
-COPY Api/Api.csproj Api/
-COPY Application/Application.csproj Application/
-COPY Infrastructure/Infrastructure.csproj Infrastructure/
+# Build from the repository root so shared MSBuild files are available.
+COPY Directory.Build.props Directory.Packages.props ./
 
+# Copy project files first so dependency restore can be cached.
+COPY src/Backend/Api/Api.csproj src/Backend/Api/
+COPY src/Backend/Application/Application.csproj src/Backend/Application/
+COPY src/Backend/Infrastructure/Infrastructure.csproj src/Backend/Infrastructure/
+
+WORKDIR /src/src/Backend
 RUN dotnet restore Api/Api.csproj
-COPY Migrator/Migrator.csproj Migrator/
+COPY src/Backend/Migrator/Migrator.csproj Migrator/
 RUN dotnet restore Migrator/Migrator.csproj
 
-COPY . .
+COPY src/Backend/ ./
 RUN dotnet publish Api/Api.csproj \
     -c Release \
     --no-restore \
