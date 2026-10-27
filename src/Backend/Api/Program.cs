@@ -11,7 +11,6 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddSingleton<RedisTicketStore>();
 builder.Services.AddSingleton<ITicketStore, PamTicketStore>();
 builder.Services.AddKeycloak(builder.Configuration);
 builder.Services.AddPamSessionOptions(builder.Configuration);

@@ -1,23 +1,18 @@
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
+using Application.Sessions;
 using Microsoft.AspNetCore.DataProtection;
 using StackExchange.Redis;
 
-namespace Api.Authentication;
+namespace Infrastructure.Authentication;
 
-public sealed class RedisTicketStore : ITicketStore
+public sealed class RedisTicketStore : ISessionTicketStore
 {
     private readonly IDatabase _database;
     private readonly IDataProtector _protector;
     private readonly TimeProvider _timeProvider;
 
     private const string KeyPrefix = "pam:session:";
-    private const string RenewScript = """
-        if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
-        redis.call('PSETEX', KEYS[1], ARGV[3], ARGV[2])
-        return 1
-        """;
 
     public RedisTicketStore(IConnectionMultiplexer redis, IDataProtectionProvider dataProtectionProvider,
         TimeProvider timeProvider)
@@ -44,11 +39,6 @@ public sealed class RedisTicketStore : ITicketStore
         throw new InvalidOperationException("Unable to allocate unique session identifier.");
     }
 
-    public async Task RenewAsync(string key, AuthenticationTicket ticket)
-    {
-        await TryRenewAsync(key, ticket);
-    }
-
     public async Task<bool> TryRenewAsync(string key, AuthenticationTicket ticket)
     {
         if (!SessionIdentifier.IsValid(key)) return false;
@@ -66,11 +56,12 @@ public sealed class RedisTicketStore : ITicketStore
                 return false;
 
             var ttl = GetTimeToLive(ticket);
-            // Compare the protected value atomically. A concurrent renewal or
-            // removal invalidates this write; retry against the latest ticket.
-            var result = await _database.ScriptEvaluateAsync(RenewScript, [redisKey],
-                [previous, payload, (long)ttl.TotalMilliseconds]);
-            if ((long)result == 1) return true;
+            var transaction = _database.CreateTransaction();
+            transaction.AddCondition(Condition.StringEqual(redisKey, previous));
+            // Queue the write before executing; awaiting it here would deadlock.
+            var write = transaction.StringSetAsync(redisKey, payload, ttl);
+            if (await transaction.ExecuteAsync())
+                return await write;
         }
 
         // Under sustained contention, leave the winning ticket intact.

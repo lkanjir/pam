@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Api;
 using Api.Authentication;
+using Infrastructure.Authentication;
 using Api.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Hosting.Internal;
@@ -347,7 +348,7 @@ public sealed class CookieSessionTests(PostgresFixture postgres, RedisFixture re
         await using var database = await postgres.CreateDatabaseAsync();
         var clock = new TestTimeProvider();
         await using var services = CreateServices(database, clock);
-        var rawStore = services.GetRequiredService<RedisTicketStore>();
+        var rawStore = services.GetRequiredService<ISessionTicketStore>();
         var id = await rawStore.StoreAsync(SessionTestData.Ticket(clock.Now));
         var store = services.GetRequiredService<Microsoft.AspNetCore.Authentication.Cookies.ITicketStore>();
 
@@ -575,7 +576,7 @@ public sealed class CookieSessionTests(PostgresFixture postgres, RedisFixture re
         services.AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider());
         services.AddSingleton(clock);
         services.AddSingleton(redis.Connection);
-        services.AddSingleton<RedisTicketStore>();
+        services.AddSingleton<ISessionTicketStore, RedisTicketStore>();
         services.AddSingleton<Microsoft.AspNetCore.Authentication.Cookies.ITicketStore, PamTicketStore>();
         // Each operation gets a fresh DbContext against this test's isolated database.
         services.AddDbContext<Infrastructure.Persistence.PamDbContext>(options => options

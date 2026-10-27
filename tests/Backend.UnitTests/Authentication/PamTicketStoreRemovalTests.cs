@@ -1,6 +1,5 @@
 using FakeItEasy;
 using Microsoft.AspNetCore.Http;
-using StackExchange.Redis;
 
 namespace Backend.UnitTests.Authentication;
 
@@ -22,12 +21,12 @@ public sealed class PamTicketStoreRemovalTests
     }
 
     [Fact]
-    public async Task RemoveAsync_WhenRedisFails_PropagatesFailure()
+    public async Task RemoveAsync_WhenStorageFails_PropagatesFailure()
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
-        var failure = new InvalidOperationException("Redis unavailable");
-        A.CallTo(() => fixture.Database.KeyDeleteAsync(A<RedisKey>._, CommandFlags.None)).ThrowsAsync(failure);
+        var failure = new InvalidOperationException("Storage unavailable");
+        A.CallTo(() => fixture.Tickets.RemoveAsync(TicketStoreFixture.SessionId)).ThrowsAsync(failure);
 
         // Act
         var error = await Record.ExceptionAsync(() =>
