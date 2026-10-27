@@ -1,7 +1,7 @@
 using System.Security.Claims;
+using Application.Sessions;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 
 namespace Api.Authentication;
 
@@ -24,9 +24,7 @@ public static class AuthenticationEndpoints
         endpoints.MapPost("/auth/logout", async (HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
-            context.Features.Set(new SessionTermination("logout"));
-
-            await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            await context.EndPamSessionAsync(SessionEndReason.Logout);
             return TypedResults.NoContent();
         });
         

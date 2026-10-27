@@ -1,3 +1,4 @@
+using Application.Sessions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Options;
@@ -46,15 +47,6 @@ internal static class PamSessionSignIn
         var previousSession = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         if (!previousSession.Succeeded) return;
 
-        var previousTermination = context.Features.Get<SessionTermination>();
-        context.Features.Set(new SessionTermination("reauthentication"));
-        try
-        {
-            await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        }
-        finally
-        {
-            context.Features.Set(previousTermination);
-        }
+        await context.EndPamSessionAsync(SessionEndReason.Reauthentication);
     }
 }

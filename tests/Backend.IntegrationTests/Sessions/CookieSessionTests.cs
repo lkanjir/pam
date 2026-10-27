@@ -25,6 +25,33 @@ namespace Backend.IntegrationTests.Sessions;
 public sealed class CookieSessionTests(PostgresFixture postgres, RedisFixture redis)
     : IClassFixture<PostgresFixture>, IClassFixture<RedisFixture>
 {
+    [Fact]
+    public async Task LogoutEndpoint_DoesNotLeakEndReasonIntoLaterCleanup()
+    {
+        // Arrange
+        await using var database = await postgres.CreateDatabaseAsync();
+        var principalId = await SeedPrincipalAsync(database);
+        var clock = new TestTimeProvider();
+        await using var services = CreateServices(database, clock);
+        var cookie = await LoginAsync(services, clock, principalId);
+        var store = services.GetRequiredService<Microsoft.AspNetCore.Authentication.Cookies.ITicketStore>();
+        var otherId = await store.StoreAsync(SessionTestData.Ticket(clock.Now, principalId));
+        var otherHash = SessionTestData.Hash(otherId);
+        await using var scope = services.CreateAsyncScope();
+        var context = CreateLogoutContext(scope.ServiceProvider, cookie);
+        await ExecuteLogoutEndpointAsync(context);
+
+        // Act
+        await store.RemoveAsync(otherId, context, CancellationToken.None);
+
+        // Assert
+        Assert.Null(await database.Context.AuthenticationSessionLedgers
+            .Where(s => s.SessionIdHash == otherHash).Select(s => s.EndedAt).SingleAsync());
+        Assert.Equal(1, await database.Context.AuditEvents.CountAsync(e =>
+            e.EventType == "authentication.session.ended" && e.ReasonCode == "logout"));
+        Assert.False(await redis.Connection.GetDatabase().KeyExistsAsync("pam:session:" + otherHash));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -582,6 +609,7 @@ public sealed class CookieSessionTests(PostgresFixture postgres, RedisFixture re
         services.AddDbContext<Infrastructure.Persistence.PamDbContext>(options => options
             .UseNpgsql(database.Context.Database.GetConnectionString()).UseSnakeCaseNamingConvention());
         services.AddScoped<ISessionLedgerWriter, SessionLedgerWriter>();
+        services.AddScoped<SessionTerminator>();
         services.AddScoped<Application.Identity.IPrincipalIdentityReader, Infrastructure.Identity.PrincipalIdentityReader>();
         services.AddSingleton<IOptions<PamSessionOptions>>(Options.Create(new PamSessionOptions
         {

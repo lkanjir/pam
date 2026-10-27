@@ -122,3 +122,24 @@ Coordination unit tests fake `ISessionTicketStore` and `ISessionLedgerWriter`; t
 do not configure Redis commands, serialization or cryptography. Storage tests
 exercise the Redis implementation separately, including conditional renewal, TTL,
 concurrent removal and rejection of expired stored tickets.
+
+## Explicit session termination
+
+Application sign-out calls use `EndPamSessionAsync` with a `SessionEndReason`.
+The adapter carries that intent only during the standard framework `SignOutAsync`
+call, restoring the previous request state in `finally`. This bridge is necessary
+because `ITicketStore.RemoveAsync` does not receive sign-out properties and runs
+before the cookie `SigningOut` event. Call sites do not manipulate request features.
+
+The ticket-store adapter delegates explicit endings to the scoped
+`SessionTerminator.EndSessionAsync(sessionId, reason, correlationId)`. This operation
+can also be invoked without HTTP. It revokes storage first, then persists the end
+with stable codes `logout`, `reauthentication` or `access_changed`. Storage failure
+propagates without an end audit; audit failure after revocation is logged and does
+not undo revocation or prevent cookie expiry. The correlation ID is used in failure
+logs; ledger/audit persistence retains its existing correlation behavior.
+
+Framework removal without explicit intent, and cleanup of an unissued session,
+remain storage-only operations. They do not record a user logout. Tests cover all
+three reason codes, operation ordering, storage/audit failures and isolation of the
+sign-out intent from later cleanup in the same request.

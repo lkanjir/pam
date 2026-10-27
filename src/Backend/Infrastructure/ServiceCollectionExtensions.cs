@@ -76,6 +76,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IPrincipalIdentityReader, PrincipalIdentityReader>();
         services.AddScoped<ISessionLedgerWriter, SessionLedgerWriter>();
+        services.AddScoped<SessionTerminator>();
         
         return services;
     }
