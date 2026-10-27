@@ -120,7 +120,7 @@ public sealed class PamTicketStoreTests
 
         // Assert
         A.CallTo(() => fixture.Ledger.RecordStartedAsync(
-            A<SessionStarted>.That.Matches(s => s.CorrelationId == "request-42"), A<CancellationToken>._))
+            A<SessionStarted>.That.Matches(s => s.Request.CorrelationId == "request-42"), A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
     }
 
@@ -137,7 +137,7 @@ public sealed class PamTicketStoreTests
 
         // Assert
         A.CallTo(() => fixture.Ledger.RecordStartedAsync(
-            A<SessionStarted>.That.Matches(s => s.UserAgent == new string('a', 2048)), A<CancellationToken>._))
+            A<SessionStarted>.That.Matches(s => s.Request.UserAgent == new string('a', 2048)), A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
     }
 

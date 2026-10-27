@@ -23,24 +23,46 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
 
         // Assert
         Assert.True(await database.Context.AuthenticationSessionLedgers
-            .AnyAsync(s => s.SessionIdHash == session.SessionIdHash && s.PrincipalId == session.PrincipalId));
+            .AnyAsync(s => s.SessionIdHash == session.SessionIdHash && s.PrincipalId == session.Principal.Id));
     }
 
-    [Fact]
-    public async Task RecordStartedAsync_PersistsPrincipalSnapshot()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SessionAudit_PreservesPrincipalSnapshotJsonContract(bool ended)
     {
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
         var writer = new SessionLedgerWriter(database.Context);
 
+        // Give SQL's current principal snapshot the same source values as the start event.
+        await database.Context.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE principals SET display_name = {session.Principal.DisplayName} WHERE id = {session.Principal.Id}");
+
         // Act
         await writer.RecordStartedAsync(session);
+        if (ended)
+        {
+            await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout");
+        }
 
         // Assert
-        var audit = await database.Context.AuditEvents.AsNoTracking().SingleAsync();
-        using var snapshot = System.Text.Json.JsonDocument.Parse(audit.ActorSnapshot!);
-        Assert.Equal(session.DisplayName, snapshot.RootElement.GetProperty("displayName").GetString());
+        var eventType = ended ? "authentication.session.ended" : "authentication.session.started";
+        var audit = await database.Context.AuditEvents.AsNoTracking().SingleAsync(e => e.EventType == eventType);
+        Assert.Equal(1, audit.SchemaVersion);
+        foreach (var json in new[] { audit.ActorSnapshot, audit.SubjectSnapshot })
+        {
+            using var snapshot = System.Text.Json.JsonDocument.Parse(json!);
+            var root = snapshot.RootElement;
+            Assert.Equal(new[] { "displayName", "id", "issuer", "publicId", "subject" },
+                root.EnumerateObject().Select(property => property.Name).Order().ToArray());
+            Assert.Equal(session.Principal.Id, root.GetProperty("id").GetInt64());
+            Assert.Equal(session.Principal.PublicId.ToString(), root.GetProperty("publicId").GetString());
+            Assert.Equal("Ana Horvat", root.GetProperty("displayName").GetString());
+            Assert.Equal("test-issuer", root.GetProperty("issuer").GetString());
+            Assert.Equal("ana", root.GetProperty("subject").GetString());
+        }
     }
 
     [Fact]
@@ -146,8 +168,8 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         Assert.True(await database.Context.AuditEvents.AnyAsync(e =>
             e.EventType == "authentication.session.ended" &&
             e.SessionIdHash == session.SessionIdHash &&
-            e.ActorPrincipalId == session.PrincipalId &&
-            e.SubjectPrincipalId == session.PrincipalId &&
+            e.ActorPrincipalId == session.Principal.Id &&
+            e.SubjectPrincipalId == session.Principal.Id &&
             e.ReasonCode == "logout"));
     }
 
@@ -200,8 +222,9 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         db.Principals.Add(principal);
         await db.SaveChangesAsync();
         var createdAt = new DateTimeOffset(2026, 10, 23, 12, 0, 0, TimeSpan.Zero);
-        return new SessionStarted(principal.Id, new string('A', 64), "idp-session", createdAt,
-            createdAt.AddMinutes(30), null, "Test browser", principal.PublicId.ToString(),
-            "Ana Horvat", principal.Issuer, principal.Subject, "test-correlation");
+        return new SessionStarted(
+            new PrincipalSnapshot(principal.Id, principal.PublicId, "Ana Horvat", principal.Issuer, principal.Subject),
+            new string('A', 64), "idp-session", createdAt, createdAt.AddMinutes(30),
+            new SessionRequestMetadata(null, "Test browser", "test-correlation"));
     }
 }
