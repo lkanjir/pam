@@ -6,23 +6,22 @@ namespace Backend.UnitTests.Authentication;
 
 public sealed class PamTicketStoreRenewalTests
 {
-    private static readonly string SessionId = new('A', 64);
-
     [Fact]
     public async Task RenewAsync_AfterAbsoluteDeadline_DoesNotWriteRedis()
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
+        var sessionId = await fixture.SeedRenewableSessionAsync();
         var ticket = fixture.StartedTicket();
         fixture.Clock.Now = fixture.Clock.Now.AddHours(8);
         ticket.Properties.ExpiresUtc = fixture.Clock.Now.AddMinutes(30);
 
         // Act
-        await fixture.Store.RenewAsync(SessionId, ticket);
+        await fixture.Store.RenewAsync(sessionId, ticket);
 
         // Assert
-        A.CallTo(() => fixture.Database.StringSetAsync(A<RedisKey>._, A<RedisValue>._,
-            A<TimeSpan?>._, When.Exists)).MustNotHaveHappened();
+        A.CallTo(() => fixture.Database.ScriptEvaluateAsync(A<string>._, A<RedisKey[]>._,
+            A<RedisValue[]>._, CommandFlags.None)).MustNotHaveHappened();
     }
 
     [Fact]
@@ -30,14 +29,15 @@ public sealed class PamTicketStoreRenewalTests
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
+        var sessionId = await fixture.SeedRenewableSessionAsync();
         var ticket = SessionTestData.Ticket(fixture.Clock.Now);
 
         // Act
-        await fixture.Store.RenewAsync(SessionId, ticket);
+        await fixture.Store.RenewAsync(sessionId, ticket);
 
         // Assert
-        A.CallTo(() => fixture.Database.StringSetAsync(A<RedisKey>._, A<RedisValue>._,
-            A<TimeSpan?>._, When.Exists)).MustNotHaveHappened();
+        A.CallTo(() => fixture.Database.ScriptEvaluateAsync(A<string>._, A<RedisKey[]>._,
+            A<RedisValue[]>._, CommandFlags.None)).MustNotHaveHappened();
     }
 
     [Fact]
@@ -45,15 +45,16 @@ public sealed class PamTicketStoreRenewalTests
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
+        var sessionId = await fixture.SeedRenewableSessionAsync();
         var ticket = fixture.StartedTicket();
-        A.CallTo(() => fixture.Database.StringSetAsync(A<RedisKey>._, A<RedisValue>._,
-            A<TimeSpan?>._, When.Exists)).Returns(true);
+        A.CallTo(() => fixture.Database.ScriptEvaluateAsync(A<string>._, A<RedisKey[]>._,
+            A<RedisValue[]>._, CommandFlags.None)).Returns(RedisResult.Create((RedisValue)1));
 
         // Act
-        await fixture.Store.RenewAsync(SessionId, ticket);
+        await fixture.Store.RenewAsync(sessionId, ticket);
 
         // Assert
-        A.CallTo(() => fixture.Ledger.RecordRenewedAsync(SessionTestData.Hash(SessionId),
+        A.CallTo(() => fixture.Ledger.RecordRenewedAsync(SessionTestData.Hash(sessionId),
             ticket.Properties.ExpiresUtc!.Value, CancellationToken.None)).MustHaveHappenedOnceExactly();
     }
 
@@ -62,12 +63,13 @@ public sealed class PamTicketStoreRenewalTests
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
+        var sessionId = await fixture.SeedRenewableSessionAsync();
         var ticket = fixture.StartedTicket();
-        A.CallTo(() => fixture.Database.StringSetAsync(A<RedisKey>._, A<RedisValue>._,
-            A<TimeSpan?>._, When.Exists)).Returns(false);
+        A.CallTo(() => fixture.Database.StringGetAsync(A<RedisKey>._, CommandFlags.None))
+            .Returns(RedisValue.Null);
 
         // Act
-        await fixture.Store.RenewAsync(SessionId, ticket);
+        await fixture.Store.RenewAsync(sessionId, ticket);
 
         // Assert
         A.CallTo(() => fixture.Ledger.RecordRenewedAsync(A<string>._,
@@ -79,12 +81,13 @@ public sealed class PamTicketStoreRenewalTests
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
-        A.CallTo(() => fixture.Database.StringSetAsync(A<RedisKey>._, A<RedisValue>._,
-            A<TimeSpan?>._, When.Exists)).ThrowsAsync(new InvalidOperationException("Redis unavailable"));
+        var sessionId = await fixture.SeedRenewableSessionAsync();
+        A.CallTo(() => fixture.Database.ScriptEvaluateAsync(A<string>._, A<RedisKey[]>._,
+            A<RedisValue[]>._, CommandFlags.None)).ThrowsAsync(new InvalidOperationException("Redis unavailable"));
 
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            fixture.Store.RenewAsync(SessionId, fixture.StartedTicket()));
+            fixture.Store.RenewAsync(sessionId, fixture.StartedTicket()));
 
         // Assert
         A.CallTo(() => fixture.Ledger.RecordRenewedAsync(A<string>._,
@@ -96,15 +99,16 @@ public sealed class PamTicketStoreRenewalTests
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
+        var sessionId = await fixture.SeedRenewableSessionAsync();
         var failure = new InvalidOperationException("Database unavailable");
-        A.CallTo(() => fixture.Database.StringSetAsync(A<RedisKey>._, A<RedisValue>._,
-            A<TimeSpan?>._, When.Exists)).Returns(true);
+        A.CallTo(() => fixture.Database.ScriptEvaluateAsync(A<string>._, A<RedisKey[]>._,
+            A<RedisValue[]>._, CommandFlags.None)).Returns(RedisResult.Create((RedisValue)1));
         A.CallTo(() => fixture.Ledger.RecordRenewedAsync(A<string>._,
             A<DateTimeOffset>._, A<CancellationToken>._)).ThrowsAsync(failure);
 
         // Act
         var error = await Record.ExceptionAsync(() =>
-            fixture.Store.RenewAsync(SessionId, fixture.StartedTicket()));
+            fixture.Store.RenewAsync(sessionId, fixture.StartedTicket()));
 
         // Assert
         Assert.Same(failure, error);
@@ -115,15 +119,16 @@ public sealed class PamTicketStoreRenewalTests
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
-        A.CallTo(() => fixture.Database.StringSetAsync(A<RedisKey>._, A<RedisValue>._,
-            A<TimeSpan?>._, When.Exists)).Returns(true);
+        var sessionId = await fixture.SeedRenewableSessionAsync();
+        A.CallTo(() => fixture.Database.ScriptEvaluateAsync(A<string>._, A<RedisKey[]>._,
+            A<RedisValue[]>._, CommandFlags.None)).Returns(RedisResult.Create((RedisValue)1));
         A.CallTo(() => fixture.Ledger.RecordRenewedAsync(A<string>._,
             A<DateTimeOffset>._, A<CancellationToken>._))
             .ThrowsAsync(new InvalidOperationException("Database unavailable"));
 
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            fixture.Store.RenewAsync(SessionId, fixture.StartedTicket()));
+            fixture.Store.RenewAsync(sessionId, fixture.StartedTicket()));
 
         // Assert
         A.CallTo(() => fixture.Database.KeyDeleteAsync(A<RedisKey>._, CommandFlags.None)).MustNotHaveHappened();

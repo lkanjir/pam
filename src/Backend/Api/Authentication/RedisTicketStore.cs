@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
@@ -14,6 +13,11 @@ public sealed class RedisTicketStore : ITicketStore
     private readonly TimeProvider _timeProvider;
 
     private const string KeyPrefix = "pam:session:";
+    private const string RenewScript = """
+        if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+        redis.call('PSETEX', KEYS[1], ARGV[3], ARGV[2])
+        return 1
+        """;
 
     public RedisTicketStore(IConnectionMultiplexer redis, IDataProtectionProvider dataProtectionProvider,
         TimeProvider timeProvider)
@@ -51,9 +55,26 @@ public sealed class RedisTicketStore : ITicketStore
 
         var redisKey = GetRedisKey(key);
         var payload = Protect(ticket, redisKey);
-        var ttl = GetTimeToLive(ticket);
+        for (var attempt = 0; attempt < 8; attempt++)
+        {
+            var previous = await _database.StringGetAsync(redisKey);
+            var current = Unprotect(previous, redisKey);
+            if (current?.Properties.ExpiresUtc is not { } currentExpiry
+                || currentExpiry <= _timeProvider.GetUtcNow()
+                || ticket.Properties.ExpiresUtc is not { } proposedExpiry
+                || proposedExpiry <= currentExpiry)
+                return false;
 
-        return await _database.StringSetAsync(redisKey, payload, ttl, When.Exists);
+            var ttl = GetTimeToLive(ticket);
+            // Compare the protected value atomically. A concurrent renewal or
+            // removal invalidates this write; retry against the latest ticket.
+            var result = await _database.ScriptEvaluateAsync(RenewScript, [redisKey],
+                [previous, payload, (long)ttl.TotalMilliseconds]);
+            if ((long)result == 1) return true;
+        }
+
+        // Under sustained contention, leave the winning ticket intact.
+        return false;
     }
 
     public async Task<AuthenticationTicket?> RetrieveAsync(string key)
@@ -63,23 +84,23 @@ public sealed class RedisTicketStore : ITicketStore
         var redisKey = GetRedisKey(key);
         var value = await _database.StringGetAsync(redisKey);
 
-        if (value.IsNull) return null;
+        var ticket = Unprotect(value, redisKey);
+        return ticket?.Properties.ExpiresUtc is { } expiresAt && expiresAt > _timeProvider.GetUtcNow()
+            ? ticket : null;
+    }
 
-        AuthenticationTicket? ticket;
+    private AuthenticationTicket? Unprotect(RedisValue value, string redisKey)
+    {
+        if (value.IsNull) return null;
         try
         {
             var serialized = _protector.CreateProtector(redisKey).Unprotect(value!);
-            ticket = TicketSerializer.Default.Deserialize(serialized);
+            return TicketSerializer.Default.Deserialize(serialized);
         }
         catch (CryptographicException)
         {
             return null;
         }
-
-        if (ticket?.Properties.ExpiresUtc is not { } expiresAt)
-            return null;
-
-        return expiresAt > _timeProvider.GetUtcNow() ? ticket : null;
     }
 
     public async Task RemoveAsync(string key)
