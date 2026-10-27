@@ -80,6 +80,11 @@ public static class ServiceCollectionExtensions
             };
         }).AddOpenIdConnect("oidc", _ => { });
 
+        services.Configure<Microsoft.AspNetCore.Authentication.AuthenticationOptions>(options =>
+            options.SchemeMap[CookieAuthenticationDefaults.AuthenticationScheme].HandlerType =
+                typeof(PamCookieAuthenticationHandler));
+        services.AddTransient<PamCookieAuthenticationHandler>();
+
         services.AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
             .Configure<ITicketStore>((
                 options, ticketStore) =>
@@ -92,7 +97,7 @@ public static class ServiceCollectionExtensions
             })
             .Configure<PamSessionLifetime>((options, sessionLifetime) =>
             {
-                // Sign-in may reuse an existing session via RenewAsync instead of StoreAsync.
+                // Every explicit sign-in starts a new server-side session.
                 options.Events.OnSigningIn = context =>
                 {
                     sessionLifetime.Initialize(context.Properties);
