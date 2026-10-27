@@ -27,6 +27,56 @@ public sealed class CookieSessionTests(PostgresFixture postgres, RedisFixture re
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task SignIn_WithDefaultProperties_UsesConfiguredCookieLifetime(bool persistent)
+    {
+        // Arrange
+        await using var database = await postgres.CreateDatabaseAsync();
+        var principalId = await SeedPrincipalAsync(database);
+        var clock = new TestTimeProvider();
+        await using var server = await CreateSessionServerAsync(database, clock, principalId);
+        using var client = server.GetTestClient();
+
+        // Act
+        using var response = await client.GetAsync($"/login?persistent={persistent}");
+        response.EnsureSuccessStatusCode();
+
+        // Assert
+        var cookie = Microsoft.Net.Http.Headers.SetCookieHeaderValue.Parse(
+            response.Headers.GetValues("Set-Cookie").Single());
+        Assert.Equal("pam.session", cookie.Name.ToString());
+        Assert.True(cookie.HttpOnly);
+        Assert.Equal(Microsoft.Net.Http.Headers.SameSiteMode.Strict, cookie.SameSite);
+        Assert.Equal("/", cookie.Path.ToString());
+        Assert.Equal(persistent ? clock.Now.AddMinutes(30) : (DateTimeOffset?)null, cookie.Expires);
+        Assert.Equal(clock.Now.AddMinutes(30).UtcDateTime,
+            await database.Context.AuthenticationSessionLedgers.Select(s => s.ExpectedExpiresAt).SingleAsync());
+    }
+
+    [Fact]
+    public async Task SignIn_WithRedirect_ReturnsUsableCookieAndNoStoreHeaders()
+    {
+        // Arrange
+        await using var database = await postgres.CreateDatabaseAsync();
+        var principalId = await SeedPrincipalAsync(database);
+        var clock = new TestTimeProvider();
+        await using var server = await CreateSessionServerAsync(database, clock, principalId);
+        using var client = server.GetTestClient();
+
+        // Act
+        using var response = await client.GetAsync("/login?redirect=true");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/me", response.Headers.Location?.OriginalString);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        UpdateCookie(client, response);
+        using var authenticated = await client.GetAsync("/me");
+        Assert.Equal(HttpStatusCode.OK, authenticated.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task Authenticate_WhenAccessChanges_RevokesSession(bool rolesChanged)
     {
         // Arrange
@@ -156,7 +206,9 @@ public sealed class CookieSessionTests(PostgresFixture postgres, RedisFixture re
         await Assert.ThrowsAsync<DbUpdateException>(() => context.SignInAsync("Cookies", ticket.Principal, ticket.Properties));
 
         // Assert
-        Assert.Equal(0, context.Response.Headers.SetCookie.Count);
+        // The standard sign-out expires the previous cookie; no usable new cookie is issued.
+        Assert.Single(context.Response.Headers.SetCookie);
+        Assert.StartsWith("pam.session=;", context.Response.Headers.SetCookie[0]);
         Assert.Equal(1, await database.Context.AuthenticationSessionLedgers.CountAsync());
         var hash = await database.Context.AuthenticationSessionLedgers.Select(s => s.SessionIdHash).SingleAsync();
         Assert.False(await redis.Connection.GetDatabase().KeyExistsAsync("pam:session:" + hash));
@@ -438,7 +490,13 @@ public sealed class CookieSessionTests(PostgresFixture postgres, RedisFixture re
             if (context.Request.Path == "/login")
             {
                 var ticket = SessionTestData.Ticket(clock.Now, principalId);
-                await context.SignInAsync("Cookies", ticket.Principal, ticket.Properties);
+                // As with OIDC, let the cookie handler initialize issue/expiry times.
+                var properties = new AuthenticationProperties
+                {
+                    IsPersistent = context.Request.Query["persistent"] == "True",
+                    RedirectUri = context.Request.Query["redirect"] == "true" ? "/me" : null
+                };
+                await context.SignInAsync("Cookies", ticket.Principal, properties);
                 return;
             }
             var authenticated = await context.AuthenticateAsync("Cookies");
@@ -451,9 +509,14 @@ public sealed class CookieSessionTests(PostgresFixture postgres, RedisFixture re
     private static void UpdateCookie(HttpClient client, HttpResponseMessage response)
     {
         if (!response.Headers.TryGetValues("Set-Cookie", out var cookies)) return;
-        var cookie = cookies.Single(value => value.StartsWith("pam.session=")).Split(';')[0];
+        // Standard sign-out followed by sign-in emits deletion and replacement.
+        // Apply them in response order, as a browser does.
+        var jar = new CookieContainer();
+        foreach (var cookie in cookies)
+            jar.SetCookies(client.BaseAddress!, cookie);
         client.DefaultRequestHeaders.Remove("Cookie");
-        client.DefaultRequestHeaders.Add("Cookie", cookie);
+        var header = jar.GetCookieHeader(client.BaseAddress!);
+        if (header.Length > 0) client.DefaultRequestHeaders.Add("Cookie", header);
     }
 
     private static Task RejectLogoutAuditAsync(TestDatabase database) =>

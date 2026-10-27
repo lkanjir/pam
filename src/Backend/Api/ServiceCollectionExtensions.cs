@@ -59,6 +59,7 @@ public static class ServiceCollectionExtensions
             options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
         }).AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
         {
+            options.ForwardSignIn = PamSessionSignIn.Scheme;
             options.Cookie.Name = "pam.session";
             options.Cookie.HttpOnly = true;
             options.Cookie.SameSite = SameSiteMode.Strict;
@@ -78,12 +79,7 @@ public static class ServiceCollectionExtensions
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return Task.CompletedTask;
             };
-        }).AddOpenIdConnect("oidc", _ => { });
-
-        services.Configure<Microsoft.AspNetCore.Authentication.AuthenticationOptions>(options =>
-            options.SchemeMap[CookieAuthenticationDefaults.AuthenticationScheme].HandlerType =
-                typeof(PamCookieAuthenticationHandler));
-        services.AddTransient<PamCookieAuthenticationHandler>();
+        }).AddPamSessionSignIn().AddOpenIdConnect("oidc", _ => { });
 
         services.AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
             .Configure<ITicketStore>((
