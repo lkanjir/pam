@@ -116,7 +116,7 @@ old-cookie replay, identity changes, audit failures, persistence and redirects.
 It depends on `ISessionTicketStore`, the small authentication-storage contract in
 Infrastructure. `RedisTicketStore` implements that contract with Data Protection
 and Redis. The contract uses ASP.NET authentication tickets, so it stays outside
-the framework-independent Application and Domain projects.
+the framework-independent Application project.
 
 Coordination unit tests fake `ISessionTicketStore` and `ISessionLedgerWriter`; they
 do not configure Redis commands, serialization or cryptography. Storage tests
@@ -156,3 +156,14 @@ Both cookie schemes resolve scoped `CookieAuthenticationEvents` through
 `EventsType`. `PamCookieEvents` receives the identity reader through its
 constructor and rejects disabled users or changed roles. `PamSignInCookieEvents`
 initializes the session lifetime and rotates an authenticated previous session.
+
+## Persistence entities
+
+EF entities live in `Infrastructure/Persistence/Entities` and are mapped directly
+by `PamDbContext`. There is no separate Domain project or parallel domain model.
+Application contains the use-case contracts and read projections, without a
+dependency on EF or Infrastructure.
+
+Moving the entity namespace does not change the database schema. The current EF
+model snapshot uses the new namespace; historical migration target models retain
+the original names. Integration tests apply the existing migrations to PostgreSQL.

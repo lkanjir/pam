@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace Domain;
+namespace Infrastructure.Persistence.Entities;
 
 public sealed class AuthenticationSessionLedger
 {

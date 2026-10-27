@@ -1,6 +1,6 @@
 using Application.Sessions;
 using Backend.IntegrationTests.Fixtures;
-using Domain;
+using Infrastructure.Persistence.Entities;
 using Infrastructure.Persistence;
 using Infrastructure.Sessions;
 using Microsoft.EntityFrameworkCore;

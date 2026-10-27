@@ -10,7 +10,7 @@ using Microsoft.Extensions.Hosting.Internal;
 using Application.Sessions;
 using Backend.IntegrationTests.Fixtures;
 using Backend.Tests.Support;
-using Domain;
+using Infrastructure.Persistence.Entities;
 using Infrastructure.Sessions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;

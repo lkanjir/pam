@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Application.Sessions;
-using Domain;
+using Infrastructure.Persistence.Entities;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
