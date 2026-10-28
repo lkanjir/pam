@@ -13,4 +13,5 @@ public sealed class ManagedResource
     public long CreatedByPrincipalId { get; init; }
     public DateTime ModifiedAt { get; init; }
     public long ModifiedByPrincipalId { get; init; }
+    public DateTime? DeletedAt { get; set; }
 }

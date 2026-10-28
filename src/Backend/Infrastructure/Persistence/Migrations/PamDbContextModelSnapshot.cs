@@ -442,6 +442,10 @@ namespace Infrastructure.Persistence.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("created_by_principal_id");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
                     b.Property<string>("Description")
                         .HasColumnType("text")
                         .HasColumnName("description");

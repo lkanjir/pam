@@ -19,6 +19,8 @@ public sealed class ManagedResourceConfiguration : IEntityTypeConfiguration<Mana
         builder.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
         builder.Property(e => e.ModifiedAt).HasDefaultValueSql("now()");
 
+        builder.HasQueryFilter(e => e.DeletedAt == null);
+
         builder.HasIndex(e => e.PublicId).IsUnique();
 
         builder.HasOne<Principal>()
