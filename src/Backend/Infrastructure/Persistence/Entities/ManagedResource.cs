@@ -8,7 +8,7 @@ public sealed class ManagedResource
     public string? Description { get; init; }
     public string ResourceType { get; init; } = string.Empty;
     public string Environment { get; init; } = string.Empty;
-    public bool IsActive { get; init; }
+    public bool IsActive { get; init; } = true;
     public DateTime CreatedAt { get; init; }
     public long CreatedByPrincipalId { get; init; }
     public DateTime ModifiedAt { get; init; }
