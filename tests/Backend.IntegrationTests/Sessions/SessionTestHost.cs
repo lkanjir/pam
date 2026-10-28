@@ -26,11 +26,13 @@ public sealed class CookieSessionCollection : ICollectionFixture<PostgresFixture
 internal static class SessionTestHost
 {
     public static async Task<WebApplication> CreateSessionServerAsync(
-        TestDatabase database, TestTimeProvider clock, string principalId, IConnectionMultiplexer redis)
+        TestDatabase database, TestTimeProvider clock, string principalId, IConnectionMultiplexer redis,
+        Action<WebApplication>? configure = null)
     {
         var builder = CreateBuilder(database, clock, redis);
         builder.WebHost.UseTestServer();
         var app = builder.Build();
+        configure?.Invoke(app);
         app.UsePamApi();
         // Replace only the external identity provider's sign-in entry point.
         app.MapGet("/login", async (HttpContext context) =>

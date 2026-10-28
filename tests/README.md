@@ -69,7 +69,7 @@ remain for persistence failures and termination-feature cleanup within one conte
 Lifetime tests check acceptance at 7:59, rejection at 8:00, capped ledger expiry
 and Redis TTL, and rejection of legacy tickets without expiration metadata.
 
-Full Keycloak/OIDC browser flows and natural-expiration reconciliation remain
+Live Keycloak/browser flows and natural-expiration reconciliation remain
 outside the current coverage. No sleeps or Keycloak calls are needed.
 
 ## Absolute session lifetime
@@ -146,8 +146,8 @@ The ticket-store adapter delegates explicit endings to the scoped
 can also be invoked without HTTP. It revokes storage first, then persists the end
 with stable codes `logout`, `reauthentication` or `access_changed`. Storage failure
 propagates without an end audit; audit failure after revocation is logged and does
-not undo revocation or prevent cookie expiry. The correlation ID is used in failure
-logs; ledger/audit persistence retains its existing correlation behavior.
+not undo revocation or prevent cookie expiry. The caller correlation ID is required before revocation and is preserved in both
+failure logs and the session-end audit, without generation in the persistence layer.
 
 Framework removal without explicit intent, and cleanup of an unissued session,
 remain storage-only operations. They do not record a user logout. Tests cover all
@@ -191,3 +191,31 @@ Authentication/session registrations have one entry point,
 `AddPamAuthentication(configuration, environment)`. Cookie/session options and
 OIDC registration are kept in separate files; antiforgery registration lives with
 the API filter. `AddPamApi` remains the shared composition root for tests and runtime.
+
+## Verification checkpoint — 2026-10-28
+
+With the current error-handling/correlation changes on top of `f06c730`,
+`dotnet test src/Backend/Backend.sln --no-restore -m:1` passed **61 unit tests and
+78 integration tests**, including PostgreSQL/Redis Testcontainers.
+
+Error tests cover safe generic 500 responses (including PostgreSQL/Redis failures),
+empty status responses, browser Accept headers, explicit optional error codes,
+validation fields, malformed JSON/query binding in both environments and preservation
+of BadHttpRequestException status. Automatic status-to-code mapping was removed.
+
+`OidcErrorTests` uses the production authentication registration and real OIDC/cookie
+handlers with a local simulated token endpoint and signed tokens. It tests valid
+sign-in, unknown/disabled principals, IdP access denial, database lookup failure and
+invalid state. State, nonce and signature validation remain enabled. Failed-login
+cases verify no session-store issuance and no PAM cookie. These tests use FakeItEasy
+for identity lookup and ITicketStore; existing session tests cover real persistence.
+They do not replace a live Keycloak/browser smoke test.
+
+Unit tests cover missing identity claims and disconnected callback requests.
+Session tests verify required caller correlation before revocation, persistence of
+that value, replay preserving the original audit correlation, and the full HTTP
+logout-to-PostgreSQL audit path.
+
+Detailed request logging, response-ID headers and tracing remain deferred as recorded
+in the local project documentation. No production request-logging pipeline is implied
+by these tests.

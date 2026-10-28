@@ -34,13 +34,11 @@ public sealed class SessionLedgerWriter(PamDbContext dbContext) : ISessionLedger
             EventType = "authentication.session.started",
             SchemaVersion = 1,
             OccurredAt = session.CreatedAt.UtcDateTime,
-
             ActorKind = "principal",
             ActorPrincipalId = session.Principal.Id,
             SubjectPrincipalId = session.Principal.Id,
             ActorSnapshot = principalSnapshot,
             SubjectSnapshot = principalSnapshot,
-
             SessionIdHash = session.SessionIdHash,
             CorrelationId = session.Request.CorrelationId,
             Source = "pam.api",
@@ -53,23 +51,32 @@ public sealed class SessionLedgerWriter(PamDbContext dbContext) : ISessionLedger
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task RecordRenewedAsync(string sessionIdHash, DateTimeOffset expectedExpiresAt,
+    public async Task RecordRenewedAsync(
+        string sessionIdHash,
+        DateTimeOffset expectedExpiresAt,
         CancellationToken cancellationToken = default)
     {
         var expiresAtUtc = expectedExpiresAt.UtcDateTime;
 
         await dbContext.AuthenticationSessionLedgers
             .Where(session => session.SessionIdHash == sessionIdHash && session.EndedAt == null &&
-                              session.ExpectedExpiresAt < expiresAtUtc)
-            .ExecuteUpdateAsync(setters =>
-                setters.SetProperty(session => session.ExpectedExpiresAt, expiresAtUtc), cancellationToken);
+                session.ExpectedExpiresAt < expiresAtUtc)
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters.SetProperty(session => session.ExpectedExpiresAt, expiresAtUtc),
+                cancellationToken);
     }
 
-    public async Task RecordEndedAsync(string sessionIdHash, DateTimeOffset endedAt, string reason,
+    public async Task RecordEndedAsync(
+        string sessionIdHash,
+        DateTimeOffset endedAt,
+        string reason,
+        string correlationId,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(correlationId);
+
         var endedAtUtc = endedAt.UtcDateTime;
-        var correlationId = Guid.NewGuid().ToString("N");
 
         await dbContext.Database.ExecuteSqlInterpolatedAsync(
             $"""
@@ -124,6 +131,7 @@ public sealed class SessionLedgerWriter(PamDbContext dbContext) : ISessionLedger
                     'success',
                     {reason}
                 FROM snapshot
-             """, cancellationToken);
+             """,
+            cancellationToken);
     }
 }

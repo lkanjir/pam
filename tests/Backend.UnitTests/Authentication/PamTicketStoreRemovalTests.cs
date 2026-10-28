@@ -17,7 +17,7 @@ public sealed class PamTicketStoreRemovalTests
 
         // Assert
         A.CallTo(() => fixture.Ledger.RecordEndedAsync(A<string>._, A<DateTimeOffset>._,
-            A<string>._, A<CancellationToken>._)).MustNotHaveHappened();
+            A<string>._, A<string>._, A<CancellationToken>._)).MustNotHaveHappened();
     }
 
     [Fact]

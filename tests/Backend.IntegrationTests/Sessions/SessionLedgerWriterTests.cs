@@ -44,7 +44,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         await writer.RecordStartedAsync(session);
         if (ended)
         {
-            await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout");
+            await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout", "end-request");
         }
 
         // Assert
@@ -143,10 +143,10 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         var session = await CreateSessionAsync(database.Context);
         var writer = new SessionLedgerWriter(database.Context);
         await writer.RecordStartedAsync(session);
-        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout");
+        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout", "end-request");
 
         // Act
-        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(2), "removed");
+        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(2), "removed", "end-request");
 
         // Assert
         Assert.Equal("logout", await database.Context.AuthenticationSessionLedgers.Select(s => s.EndReason).SingleAsync());
@@ -162,7 +162,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         await writer.RecordStartedAsync(session);
 
         // Act
-        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout");
+        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout", "end-request");
 
         // Assert
         Assert.True(await database.Context.AuditEvents.AnyAsync(e =>
@@ -181,10 +181,10 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         var session = await CreateSessionAsync(database.Context);
         var writer = new SessionLedgerWriter(database.Context);
         await writer.RecordStartedAsync(session);
-        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout");
+        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout", "end-request");
 
         // Act
-        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(2), "logout");
+        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(2), "logout", "end-request");
 
         // Assert
         Assert.Equal(1, await database.Context.AuditEvents.CountAsync(e =>
@@ -204,7 +204,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
 
         // Act
         var error = await Record.ExceptionAsync(() =>
-            writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout"));
+            writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout", "end-request"));
 
         // Assert
         // A syntax error must not masquerade as a successful rollback test.
@@ -214,6 +214,46 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         var persisted = await database.Context.AuthenticationSessionLedgers.AsNoTracking().SingleAsync();
         Assert.Null(persisted.EndedAt);
         Assert.Null(persisted.EndReason);
+    }
+
+    [Fact]
+    public async Task RecordEndedAsync_PreservesCallerCorrelation()
+    {
+        // Arrange
+        await using var database = await postgres.CreateDatabaseAsync();
+        var session = await CreateSessionAsync(database.Context);
+        var writer = new SessionLedgerWriter(database.Context);
+        await writer.RecordStartedAsync(session);
+
+        // Act
+        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1),
+            "logout", "http-request-42");
+
+        // Assert
+        var audit = await database.Context.AuditEvents.SingleAsync(e =>
+            e.EventType == "authentication.session.ended");
+        Assert.Equal("http-request-42", audit.CorrelationId);
+    }
+
+    [Fact]
+    public async Task RecordEndedAsync_WhenReplayed_PreservesOriginalCorrelation()
+    {
+        // Arrange
+        await using var database = await postgres.CreateDatabaseAsync();
+        var session = await CreateSessionAsync(database.Context);
+        var writer = new SessionLedgerWriter(database.Context);
+        await writer.RecordStartedAsync(session);
+        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1),
+            "logout", "original-request");
+
+        // Act
+        await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(2),
+            "logout", "replay-request");
+
+        // Assert
+        var audit = await database.Context.AuditEvents.SingleAsync(e =>
+            e.EventType == "authentication.session.ended");
+        Assert.Equal("original-request", audit.CorrelationId);
     }
 
     private static async Task<SessionStarted> CreateSessionAsync(PamDbContext db)

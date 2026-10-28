@@ -10,19 +10,25 @@ public sealed class SessionTerminator(
     TimeProvider timeProvider,
     ILogger<SessionTerminator> logger)
 {
-    public async Task EndSessionAsync(string sessionId, SessionEndReason reason, string? correlationId)
+    public async Task EndSessionAsync(string sessionId, SessionEndReason reason, string correlationId)
     {
-        var reasonCode = reason.ToCode();
-        if (!SessionIdentifier.IsValid(sessionId))
-            return;
+        ArgumentException.ThrowIfNullOrWhiteSpace(correlationId);
 
-        // Revocation must succeed before recording an end. Once revoked, audit
-        // persistence must not be cancelled by the HTTP client disconnecting.
+        string reasonCode = reason.ToCode();
+        if (!SessionIdentifier.IsValid(sessionId))
+        {
+            return;
+        }
+
         await ticketStore.RemoveAsync(sessionId);
-        var sessionIdHash = SessionIdentifier.Hash(sessionId);
+        string sessionIdHash = SessionIdentifier.Hash(sessionId);
         try
         {
-            await ledgerWriter.RecordEndedAsync(sessionIdHash, timeProvider.GetUtcNow(), reasonCode,
+            await ledgerWriter.RecordEndedAsync(
+                sessionIdHash,
+                timeProvider.GetUtcNow(),
+                reasonCode,
+                correlationId,
                 CancellationToken.None);
         }
         catch (Exception exception)
@@ -30,7 +36,9 @@ public sealed class SessionTerminator(
             logger.LogError(
                 "Session was revoked, but its ledger/audit end could not be persisted. " +
                 "Session hash: {SessionIdHash}; correlation: {CorrelationId}; error type: {ErrorType}.",
-                sessionIdHash, correlationId, exception.GetType().Name);
+                sessionIdHash,
+                correlationId,
+                exception.GetType().Name);
         }
     }
 }
