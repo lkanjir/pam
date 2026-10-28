@@ -7,6 +7,12 @@ public static class ErrorHandlingExtensions
         services.AddSingleton<IProblemDetailsWriter, PamProblemDetailsWriter>();
         services.AddProblemDetails();
         services.AddExceptionHandler<PamExceptionHandler>();
+
+        services.Configure<RouteHandlerOptions>(options =>
+        {
+            options.ThrowOnBadRequest = false;
+        });
+
         return services;
     }
 

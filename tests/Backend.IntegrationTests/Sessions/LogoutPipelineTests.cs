@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.AspNetCore.Builder;
 using System.Net.Http.Json;
 using Api.Authentication;
 using Backend.IntegrationTests.Fixtures;
@@ -103,4 +104,37 @@ public sealed class LogoutPipelineTests(PostgresFixture postgres, RedisFixture r
         using var replay = await client.GetAsync("/api/me");
         Assert.Equal(HttpStatusCode.Unauthorized, replay.StatusCode);
     }
+    [Fact]
+    public async Task Logout_PersistsHttpRequestIdentifierInEndAudit()
+    {
+        // Arrange
+        await using var database = await postgres.CreateDatabaseAsync();
+        var principalId = await SeedPrincipalAsync(database);
+        await using var app = await CreateSessionServerAsync(database, new TestTimeProvider(), principalId,
+            redis.Connection, application => application.Use(async (context, next) =>
+            {
+                if (context.Request.Path == "/api/auth/logout")
+                    context.TraceIdentifier = "logout-http-request";
+                await next(context);
+            }));
+        using var client = app.GetTestClient();
+        using var login = await client.GetAsync("/login");
+        login.EnsureSuccessStatusCode();
+        UpdateCookie(client, login);
+        using var antiforgery = await client.GetAsync("/api/auth/antiforgery");
+        antiforgery.EnsureSuccessStatusCode();
+        UpdateCookie(client, antiforgery);
+        var token = await antiforgery.Content.ReadFromJsonAsync<AntiforgeryTokenResponse>();
+        client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", token!.RequestToken);
+
+        // Act
+        using var response = await client.PostAsync("/api/auth/logout", null);
+        response.EnsureSuccessStatusCode();
+
+        // Assert
+        var audit = await database.Context.AuditEvents.SingleAsync(e =>
+            e.EventType == "authentication.session.ended");
+        Assert.Equal("logout-http-request", audit.CorrelationId);
+    }
+
 }

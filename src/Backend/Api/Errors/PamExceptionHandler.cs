@@ -8,21 +8,32 @@ public sealed class PamExceptionHandler(
     ILogger<PamExceptionHandler> logger) : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(
-        HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
+        HttpContext httpContext,
+        Exception exception,
+        CancellationToken cancellationToken)
     {
-        // Log metadata only: exception messages can contain credentials or SQL data.
-        logger.LogError("Unhandled request failure. Error type: {ErrorType}; correlation: {CorrelationId}.",
-            exception.GetType().FullName, httpContext.TraceIdentifier);
-
-        await problemDetails.WriteAsync(new ProblemDetailsContext
+        if (httpContext.RequestAborted.IsCancellationRequested)
         {
-            HttpContext = httpContext,
-            ProblemDetails = new ProblemDetails
+            return true;
+        }
+
+        int status = exception is BadHttpRequestException badRequest
+            ? badRequest.StatusCode
+            : StatusCodes.Status500InternalServerError;
+
+        logger.Log(
+            status >= 500 ? LogLevel.Error : LogLevel.Information,
+            "Request failed. Status: {StatusCode}, error type: {ErrorType}, correlation: {CorrelationId}",
+            status,
+            exception.GetType().FullName,
+            httpContext.TraceIdentifier);
+
+        await problemDetails.WriteAsync(
+            new ProblemDetailsContext
             {
-                Status = StatusCodes.Status500InternalServerError,
-                Title = "An unexpected error occurred."
-            }
-        });
+                HttpContext = httpContext, ProblemDetails = new ProblemDetails { Status = status }
+            });
+
         return true;
     }
 }
