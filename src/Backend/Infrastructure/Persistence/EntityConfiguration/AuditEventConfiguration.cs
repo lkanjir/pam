@@ -37,7 +37,7 @@ public sealed class AuditEventConfiguration : IEntityTypeConfiguration<AuditEven
                .HasForeignKey(e => e.SubjectPrincipalId)
                .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasOne<ManagedResource>()
+        builder.HasOne(e => e.Resource)
                .WithMany()
                .HasForeignKey(e => e.ResourceId)
                .OnDelete(DeleteBehavior.Restrict);
