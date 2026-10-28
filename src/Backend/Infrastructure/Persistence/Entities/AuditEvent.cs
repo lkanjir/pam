@@ -24,4 +24,6 @@ public sealed class AuditEvent
     public string? Outcome { get; init; }
     public string? ReasonCode { get; init; }
     public string? Metadata { get; init; }
+
+    public ManagedResource? Resource { get; init; }
 }

@@ -456,7 +456,9 @@ namespace Infrastructure.Persistence.Migrations
                         .HasColumnName("environment");
 
                     b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
+                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<DateTime>("ModifiedAt")
@@ -758,7 +760,7 @@ namespace Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_audit_events_access_requests_request_id");
 
-                    b.HasOne("Infrastructure.Persistence.Entities.ManagedResource", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.ManagedResource", "Resource")
                         .WithMany()
                         .HasForeignKey("ResourceId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -769,6 +771,8 @@ namespace Infrastructure.Persistence.Migrations
                         .HasForeignKey("SubjectPrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_audit_events_principals_subject_principal_id");
+
+                    b.Navigation("Resource");
                 });
 
             modelBuilder.Entity("Infrastructure.Persistence.Entities.AuthenticationSessionLedger", b =>
