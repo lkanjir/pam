@@ -1,6 +1,7 @@
 using Api.Authentication;
 using Api.Errors;
 using Api.Filters;
+using Api.Resources;
 using Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
@@ -8,8 +9,10 @@ namespace Api;
 
 public static class PamApplication
 {
-    public static IServiceCollection AddPamApi(this IServiceCollection services,
-        IConfiguration configuration, IHostEnvironment environment)
+    public static IServiceCollection AddPamApi(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IHostEnvironment environment)
     {
         services.AddSingleton<TimeProvider>(TimeProvider.System);
         services.AddInfrastructure(configuration);
@@ -27,12 +30,19 @@ public static class PamApplication
         app.UseAuthorization();
 
         app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
-        app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
-        app.MapGroup("/api").RequireAuthorization().AddEndpointFilter<AntiforgeryFilter>()
-            .MapAuthenticationEndpoints();
+        app.MapHealthChecks(
+            "/health/ready",
+            new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
+
+        var api = app.MapGroup("/api").RequireAuthorization().AddEndpointFilter<AntiforgeryFilter>();
+        api.MapAuthenticationEndpoints();
+        api.MapResourceEndpoints();
 
         if (app.Environment.IsDevelopment())
+        {
             app.MapOpenApi();
+        }
+
         return app;
     }
 }

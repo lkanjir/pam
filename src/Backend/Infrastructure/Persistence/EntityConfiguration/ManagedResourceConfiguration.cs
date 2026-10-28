@@ -16,6 +16,7 @@ public sealed class ManagedResourceConfiguration : IEntityTypeConfiguration<Mana
         builder.Property(e => e.Name).IsRequired();
         builder.Property(e => e.ResourceType).IsRequired();
         builder.Property(e => e.Environment).IsRequired();
+        builder.Property(e => e.IsActive).HasDefaultValue(true);
         builder.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
         builder.Property(e => e.ModifiedAt).HasDefaultValueSql("now()");
 
@@ -24,13 +25,13 @@ public sealed class ManagedResourceConfiguration : IEntityTypeConfiguration<Mana
         builder.HasIndex(e => e.PublicId).IsUnique();
 
         builder.HasOne<Principal>()
-               .WithMany()
-               .HasForeignKey(e => e.CreatedByPrincipalId)
-               .OnDelete(DeleteBehavior.Restrict);
+            .WithMany()
+            .HasForeignKey(e => e.CreatedByPrincipalId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne<Principal>()
-               .WithMany()
-               .HasForeignKey(e => e.ModifiedByPrincipalId)
-               .OnDelete(DeleteBehavior.Restrict);
+            .WithMany()
+            .HasForeignKey(e => e.ModifiedByPrincipalId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

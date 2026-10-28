@@ -1,8 +1,10 @@
 using Application.Identity;
+using Application.Resources;
 using Infrastructure.Authentication;
 using Application.Sessions;
 using Infrastructure.Identity;
 using Infrastructure.Persistence;
+using Infrastructure.Resources;
 using Infrastructure.Sessions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
@@ -77,6 +79,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPrincipalIdentityReader, PrincipalIdentityReader>();
         services.AddScoped<ISessionLedgerWriter, SessionLedgerWriter>();
         services.AddScoped<SessionTerminator>();
+
+        services.AddScoped<IResourceService, ResourceService>();
 
         return services;
     }
