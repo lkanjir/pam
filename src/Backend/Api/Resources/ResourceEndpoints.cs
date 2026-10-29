@@ -1,4 +1,5 @@
 using Api.Authentication;
+using Application.Common.Pagination;
 using Application.Resources;
 using Application.Sessions;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -13,10 +14,24 @@ public static class ResourceEndpoints
     {
         var resources = endpoints.MapGroup("/resources").WithTags("Resources");
 
+        resources.MapGet("", List).ProducesProblem(StatusCodes.Status400BadRequest);
         resources.MapGet("/{id:guid}", GetById).WithName(GetByIdRouteName);
         resources.MapPost("", Create).ProducesValidationProblem();
 
         return endpoints;
+    }
+
+    private static async Task<Ok<CursorPage<ResourceResponse>>> List(
+        [AsParameters] ResourceListQuery query,
+        IResourceService resourceService,
+        CancellationToken cancellationToken)
+    {
+        var page = await resourceService.ListAsync(
+            query.Limit,
+            query.Cursor,
+            cancellationToken);
+
+        return TypedResults.Ok(page);
     }
 
     private static async Task<Results<Ok<ResourceResponse>, NotFound>> GetById(

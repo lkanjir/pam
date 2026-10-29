@@ -16,6 +16,7 @@ public static class PamApplication
     {
         services.AddSingleton<TimeProvider>(TimeProvider.System);
         services.AddInfrastructure(configuration);
+        services.AddValidation();
         services.AddPamAuthentication(configuration, environment);
         services.AddPamAntiforgery(environment);
         services.AddOpenApi();
