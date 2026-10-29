@@ -13,4 +13,7 @@ public sealed class AccessRequest
     public string IdempotencyKey { get; init; } = string.Empty;
     public string? PayloadHash { get; init; }
     public DateTime CreatedAt { get; init; }
+
+    public Principal RequesterPrincipal { get; set; } = null!;
+    public Entitlement Entitlement { get; set; } = null!;
 }

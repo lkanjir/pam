@@ -18,7 +18,7 @@ public sealed class PamRoleConfiguration : IEntityTypeConfiguration<PamRole>
 
         builder.HasIndex(e => e.Code).IsUnique();
 
-        builder.HasOne<Principal>()
+        builder.HasOne(e => e.CreatedByPrincipal)
                .WithMany()
                .HasForeignKey(e => e.CreatedByPrincipalId)
                .OnDelete(DeleteBehavior.Restrict);

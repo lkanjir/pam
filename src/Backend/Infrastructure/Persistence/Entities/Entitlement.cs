@@ -11,4 +11,8 @@ public sealed class Entitlement
     public bool RequiresApproval { get; init; }
     public bool RequiresTicket { get; init; }
     public bool IsActive { get; init; }
+
+    public ManagedResource Resource { get; set; } = null!;
+    public ICollection<EligibilityRule> EligibilityRules { get; } = new List<EligibilityRule>();
+    public ICollection<AccessRequest> AccessRequests { get; } = new List<AccessRequest>();
 }
