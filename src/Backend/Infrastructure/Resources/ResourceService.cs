@@ -49,35 +49,9 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
             ModifiedByPrincipalId = actor.Id
         };
 
-        var audit = new AuditEvent
-        {
-            EventType = "resource.created",
-            SchemaVersion = 1,
-            OccurredAt = now.UtcDateTime,
-            ActorKind = "principal",
-            ActorPrincipalId = actor.Id,
-            ActorSnapshot = JsonSerializer.Serialize(actor, AuditJsonOptions),
-            Resource = resource,
-            ResourceSnapshot = JsonSerializer.Serialize(
-                new
-                {
-                    publicId = resource.PublicId,
-                    name = resource.Name,
-                    description = resource.Description,
-                    resourceType = resource.ResourceType,
-                    environment = resource.Environment,
-                    isActive = resource.IsActive,
-                    createdAt = now.UtcDateTime,
-                    modifiedAt = now.UtcDateTime,
-                },
-                AuditJsonOptions),
-            CorrelationId = correlationId,
-            Source = "pam.api",
-            Outcome = "success"
-        };
-
         dbContext.ManagedResources.Add(resource);
-        dbContext.AuditEvents.Add(audit);
+        dbContext.AuditEvents.Add(CreateAuditEvent(
+            "resource.created", resource, actor, now.UtcDateTime, correlationId));
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -90,6 +64,74 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
             resource.IsActive,
             resource.CreatedAt,
             resource.ModifiedAt);
+    }
+
+    public async Task<ResourceResponse?> UpdateAsync(
+        Guid publicId,
+        UpdateResourceRequest request,
+        PrincipalSnapshot actor,
+        string correlationId,
+        CancellationToken cancellationToken = default)
+    {
+        var resource = await dbContext.ManagedResources
+            .SingleOrDefaultAsync(resource => resource.PublicId == publicId, cancellationToken);
+
+        if (resource is null)
+        {
+            return null;
+        }
+
+        var now = timeProvider.GetUtcNow();
+        resource.Name = request.Name.Trim();
+        resource.Description = request.Description?.Trim();
+        resource.ResourceType = request.ResourceType.Trim();
+        resource.Environment = request.Environment.Trim();
+        resource.IsActive = request.IsActive;
+        resource.ModifiedAt = now.UtcDateTime;
+        resource.ModifiedByPrincipalId = actor.Id;
+
+        dbContext.AuditEvents.Add(CreateAuditEvent(
+            "resource.updated", resource, actor, now.UtcDateTime, correlationId));
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return new ResourceResponse(
+            resource.PublicId,
+            resource.Name,
+            resource.Description,
+            resource.ResourceType,
+            resource.Environment,
+            resource.IsActive,
+            resource.CreatedAt,
+            resource.ModifiedAt);
+    }
+
+    public async Task<bool> DeleteAsync(
+        Guid publicId,
+        PrincipalSnapshot actor,
+        string correlationId,
+        CancellationToken cancellationToken = default)
+    {
+        var resource = await dbContext.ManagedResources
+            .SingleOrDefaultAsync(resource => resource.PublicId == publicId, cancellationToken);
+
+        if (resource is null)
+        {
+            return false;
+        }
+
+        var now = timeProvider.GetUtcNow();
+        resource.DeletedAt = now.UtcDateTime;
+        resource.IsActive = false;
+        resource.ModifiedAt = now.UtcDateTime;
+        resource.ModifiedByPrincipalId = actor.Id;
+
+        dbContext.AuditEvents.Add(CreateAuditEvent(
+            "resource.deleted", resource, actor, now.UtcDateTime, correlationId));
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return true;
     }
 
     public async Task<CursorPage<ResourceResponse>> ListAsync(
@@ -134,4 +176,39 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
 
         return new CursorPage<ResourceResponse>(items, nextCursor);
     }
+
+    private static AuditEvent CreateAuditEvent(
+        string eventType,
+        ManagedResource resource,
+        PrincipalSnapshot actor,
+        DateTime occurredAt,
+        string correlationId) => new()
+        {
+            EventType = eventType,
+            SchemaVersion = 1,
+            OccurredAt = occurredAt,
+            ActorKind = "principal",
+            ActorPrincipalId = actor.Id,
+            ActorSnapshot = JsonSerializer.Serialize(actor, AuditJsonOptions),
+            Resource = resource,
+            ResourceSnapshot = JsonSerializer.Serialize(
+            new
+            {
+                publicId = resource.PublicId,
+                name = resource.Name,
+                description = resource.Description,
+                resourceType = resource.ResourceType,
+                environment = resource.Environment,
+                isActive = resource.IsActive,
+                createdAt = resource.CreatedAt,
+                createdByPrincipalId = resource.CreatedByPrincipalId,
+                modifiedAt = resource.ModifiedAt,
+                modifiedByPrincipalId = resource.ModifiedByPrincipalId,
+                deletedAt = resource.DeletedAt
+            },
+            AuditJsonOptions),
+            CorrelationId = correlationId,
+            Source = "pam.api",
+            Outcome = "success"
+        };
 }
