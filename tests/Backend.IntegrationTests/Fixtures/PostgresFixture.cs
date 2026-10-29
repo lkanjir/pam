@@ -1,5 +1,6 @@
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -12,7 +13,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     public Task InitializeAsync() => _container.StartAsync();
     public Task DisposeAsync() => _container.DisposeAsync().AsTask();
 
-    public async Task<TestDatabase> CreateDatabaseAsync()
+    public async Task<TestDatabase> CreateDatabaseAsync(params IInterceptor[] interceptors)
     {
         var name = "test_" + Guid.NewGuid().ToString("N");
         await using var admin = new NpgsqlConnection(_container.GetConnectionString());
@@ -25,7 +26,10 @@ public sealed class PostgresFixture : IAsyncLifetime
             Pooling = false
         };
         var options = new DbContextOptionsBuilder<PamDbContext>()
-            .UseNpgsql(connection.ConnectionString).UseSnakeCaseNamingConvention().Options;
+            .UseNpgsql(connection.ConnectionString)
+            .UseSnakeCaseNamingConvention()
+            .AddInterceptors(interceptors)
+            .Options;
         var database = new TestDatabase(new PamDbContext(options), _container.GetConnectionString(), name);
         await database.Context.Database.MigrateAsync();
         return database;

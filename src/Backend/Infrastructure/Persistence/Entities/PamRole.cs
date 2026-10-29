@@ -7,4 +7,7 @@ public sealed class PamRole
     public string Description { get; private set; } = string.Empty;
     public DateTime CreatedAt { get; init; }
     public long CreatedByPrincipalId { get; init; }
+
+    public Principal CreatedByPrincipal { get; set; } = null!;
+    public ICollection<PamRoleAssignment> Assignments { get; } = new List<PamRoleAssignment>();
 }

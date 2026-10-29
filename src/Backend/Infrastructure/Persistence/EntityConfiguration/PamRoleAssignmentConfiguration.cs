@@ -18,17 +18,17 @@ public sealed class PamRoleAssignmentConfiguration : IEntityTypeConfiguration<Pa
         builder.HasIndex(e => e.PublicId).IsUnique();
         builder.HasIndex(e => new { e.PrincipalId, e.RoleId }).IsUnique();
 
-        builder.HasOne<Principal>()
-               .WithMany()
+        builder.HasOne(e => e.Principal)
+               .WithMany(e => e.RoleAssignments)
                .HasForeignKey(e => e.PrincipalId)
                .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasOne<PamRole>()
-               .WithMany()
+        builder.HasOne(e => e.Role)
+               .WithMany(e => e.Assignments)
                .HasForeignKey(e => e.RoleId)
                .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasOne<Principal>()
+        builder.HasOne(e => e.AssignedByPrincipal)
                .WithMany()
                .HasForeignKey(e => e.AssignedByPrincipalId)
                .OnDelete(DeleteBehavior.Restrict);

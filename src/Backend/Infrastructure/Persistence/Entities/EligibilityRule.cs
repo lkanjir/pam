@@ -8,4 +8,7 @@ public sealed class EligibilityRule
     public long EntitlementId { get; init; }
     public bool IsEnabled { get; init; }
     public DateTime CreatedAt { get; init; }
+
+    public Principal Principal { get; set; } = null!;
+    public Entitlement Entitlement { get; set; } = null!;
 }

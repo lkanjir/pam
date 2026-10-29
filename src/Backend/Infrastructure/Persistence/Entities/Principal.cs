@@ -10,4 +10,8 @@ public sealed class Principal
     public bool IsEnabled { get; private set; }
     public DateTime CreatedAt { get; init; }
     public DateTime ModifiedAt { get; private set; }
+
+    public ICollection<PamRoleAssignment> RoleAssignments { get; } = new List<PamRoleAssignment>();
+    public ICollection<EligibilityRule> EligibilityRules { get; } = new List<EligibilityRule>();
+    public ICollection<AccessRequest> AccessRequests { get; } = new List<AccessRequest>();
 }

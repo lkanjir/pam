@@ -24,13 +24,13 @@ public sealed class AccessRequestConfiguration : IEntityTypeConfiguration<Access
         // CHECK: RequestedDurationMinutes > 0
         builder.ToTable(t => t.HasCheckConstraint("ck_access_requests_requested_duration_minutes", "requested_duration_minutes > 0"));
 
-        builder.HasOne<Principal>()
-               .WithMany()
+        builder.HasOne(e => e.RequesterPrincipal)
+               .WithMany(e => e.AccessRequests)
                .HasForeignKey(e => e.RequesterPrincipalId)
                .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasOne<Entitlement>()
-               .WithMany()
+        builder.HasOne(e => e.Entitlement)
+               .WithMany(e => e.AccessRequests)
                .HasForeignKey(e => e.EntitlementId)
                .OnDelete(DeleteBehavior.Restrict);
     }

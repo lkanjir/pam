@@ -24,12 +24,12 @@ public sealed class ManagedResourceConfiguration : IEntityTypeConfiguration<Mana
 
         builder.HasIndex(e => e.PublicId).IsUnique();
 
-        builder.HasOne<Principal>()
+        builder.HasOne(e => e.CreatedByPrincipal)
             .WithMany()
             .HasForeignKey(e => e.CreatedByPrincipalId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasOne<Principal>()
+        builder.HasOne(e => e.ModifiedByPrincipal)
             .WithMany()
             .HasForeignKey(e => e.ModifiedByPrincipalId)
             .OnDelete(DeleteBehavior.Restrict);

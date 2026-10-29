@@ -22,8 +22,9 @@ public sealed class EntitlementConfiguration : IEntityTypeConfiguration<Entitlem
         builder.HasIndex(e => e.PublicId).IsUnique();
         builder.HasIndex(e => new { e.ResourceId, e.Code }).IsUnique();
 
-        builder.HasOne<ManagedResource>()
-               .WithMany()
+        // Historical queries that traverse Resource must explicitly use IgnoreQueryFilters().
+        builder.HasOne(e => e.Resource)
+               .WithMany(e => e.Entitlements)
                .HasForeignKey(e => e.ResourceId)
                .OnDelete(DeleteBehavior.Restrict);
     }

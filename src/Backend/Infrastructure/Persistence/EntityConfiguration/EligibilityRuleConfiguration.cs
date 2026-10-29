@@ -19,13 +19,13 @@ public sealed class EligibilityRuleConfiguration : IEntityTypeConfiguration<Elig
         builder.HasIndex(e => e.PublicId).IsUnique();
         builder.HasIndex(e => new { e.PrincipalId, e.EntitlementId }).IsUnique();
 
-        builder.HasOne<Principal>()
-               .WithMany()
+        builder.HasOne(e => e.Principal)
+               .WithMany(e => e.EligibilityRules)
                .HasForeignKey(e => e.PrincipalId)
                .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasOne<Entitlement>()
-               .WithMany()
+        builder.HasOne(e => e.Entitlement)
+               .WithMany(e => e.EligibilityRules)
                .HasForeignKey(e => e.EntitlementId)
                .OnDelete(DeleteBehavior.Restrict);
     }
