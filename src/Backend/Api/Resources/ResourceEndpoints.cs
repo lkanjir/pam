@@ -17,6 +17,8 @@ public static class ResourceEndpoints
         resources.MapGet("", List).ProducesProblem(StatusCodes.Status400BadRequest);
         resources.MapGet("/{id:guid}", GetById).WithName(GetByIdRouteName);
         resources.MapPost("", Create).ProducesValidationProblem();
+        resources.MapPut("/{id:guid}", Update).ProducesValidationProblem();
+        resources.MapDelete("/{id:guid}", Delete).ProducesProblem(StatusCodes.Status400BadRequest);
 
         return endpoints;
     }
@@ -71,5 +73,61 @@ public static class ResourceEndpoints
             resource,
             GetByIdRouteName,
             new { id = resource.Id });
+    }
+
+    private static async Task<Results<Ok<ResourceResponse>, NotFound, UnauthorizedHttpResult>> Update(
+        Guid id,
+        UpdateResourceRequest request,
+        HttpContext context,
+        IResourceService resourceService,
+        CancellationToken cancellationToken)
+    {
+        if (!PamClaims.TryRead(context.User, out var identity))
+        {
+            return TypedResults.Unauthorized();
+        }
+
+        var actor = new PrincipalSnapshot(
+            identity.Id,
+            identity.PublicId,
+            identity.DisplayName,
+            identity.Issuer,
+            identity.Subject);
+
+        var resource = await resourceService.UpdateAsync(
+            id,
+            request,
+            actor,
+            context.TraceIdentifier,
+            cancellationToken);
+
+        return resource is null ? TypedResults.NotFound() : TypedResults.Ok(resource);
+    }
+
+    private static async Task<Results<NoContent, NotFound, UnauthorizedHttpResult>> Delete(
+        Guid id,
+        HttpContext context,
+        IResourceService resourceService,
+        CancellationToken cancellationToken)
+    {
+        if (!PamClaims.TryRead(context.User, out var identity))
+        {
+            return TypedResults.Unauthorized();
+        }
+
+        var actor = new PrincipalSnapshot(
+            identity.Id,
+            identity.PublicId,
+            identity.DisplayName,
+            identity.Issuer,
+            identity.Subject);
+
+        bool deleted = await resourceService.DeleteAsync(
+            id,
+            actor,
+            context.TraceIdentifier,
+            cancellationToken);
+
+        return deleted ? TypedResults.NoContent() : TypedResults.NotFound();
     }
 }
