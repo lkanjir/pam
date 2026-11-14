@@ -20,7 +20,8 @@ public static class ResourceEndpoints
                 + "enabled for the current user. Each item then includes the available entitlements and their "
                 + "duration, approval and ticket requirements. Uses limit and cursor pagination.")
             .ProducesProblem(StatusCodes.Status400BadRequest);
-        resources.MapGet("/{id:guid}", GetById).WithName(GetByIdRouteName);
+        resources.MapGet("/{id:guid}", GetById).WithName(GetByIdRouteName)
+            .WithDescription("Returns a strong ETag identifying the resource version for conditional updates.");
         resources.MapPost("", Create).ProducesValidationProblem();
         resources.MapPut("/{id:guid}", Update).ProducesValidationProblem();
         resources.MapDelete("/{id:guid}", Delete).ProducesProblem(StatusCodes.Status400BadRequest);
@@ -60,10 +61,16 @@ public static class ResourceEndpoints
 
     private static async Task<Results<Ok<ResourceResponse>, NotFound>> GetById(
         Guid id,
+        HttpContext context,
         IResourceService resourceService,
         CancellationToken cancellationToken)
     {
         var resource = await resourceService.GetByIdAsync(id, cancellationToken);
+        if (resource is not null)
+        {
+            context.Response.Headers.ETag = ResourceEtags.Format(resource.Version);
+        }
+
         return resource is null ? TypedResults.NotFound() : TypedResults.Ok(resource);
     }
 

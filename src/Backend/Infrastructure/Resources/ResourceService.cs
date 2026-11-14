@@ -23,7 +23,8 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
                 resource.Environment,
                 resource.IsActive,
                 resource.CreatedAt,
-                resource.ModifiedAt))
+                resource.ModifiedAt)
+            { Version = resource.Version })
             .SingleOrDefaultAsync(cancellationToken);
     }
 

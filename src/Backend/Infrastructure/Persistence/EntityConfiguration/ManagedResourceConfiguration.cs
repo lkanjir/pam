@@ -19,6 +19,7 @@ public sealed class ManagedResourceConfiguration : IEntityTypeConfiguration<Mana
         builder.Property(e => e.IsActive).HasDefaultValue(true);
         builder.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
         builder.Property(e => e.ModifiedAt).HasDefaultValueSql("now()");
+        builder.Property(e => e.Version).IsRowVersion().HasColumnName("xmin");
 
         builder.HasQueryFilter(e => e.DeletedAt == null);
 
