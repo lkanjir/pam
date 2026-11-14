@@ -36,9 +36,6 @@ COPY src/Backend/Infrastructure/packages.lock.json src/Backend/Infrastructure/
 
 WORKDIR /src/src/Backend
 RUN dotnet restore Api/Api.csproj --locked-mode
-COPY src/Backend/Migrator/Migrator.csproj Migrator/
-COPY src/Backend/Migrator/packages.lock.json Migrator/
-RUN dotnet restore Migrator/Migrator.csproj --locked-mode
 
 COPY src/Backend/ ./
 RUN dotnet publish Api/Api.csproj \
@@ -46,16 +43,6 @@ RUN dotnet publish Api/Api.csproj \
     --no-restore \
     -o /app/publish \
     /p:UseAppHost=false
-
-FROM build AS migrator-build
-RUN dotnet publish Migrator/Migrator.csproj -c Release --no-restore \
-    -o /app/migrator /p:UseAppHost=false
-
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS migrator
-WORKDIR /app
-COPY --from=migrator-build /app/migrator .
-USER $APP_UID
-ENTRYPOINT ["dotnet", "Migrator.dll"]
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app

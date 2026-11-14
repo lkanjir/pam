@@ -26,13 +26,32 @@ See [test coverage and conventions](tests/README.md) for test design and isolati
 Run PostgreSQL, Redis, Keycloak and Vault independently of the API debugger:
 
 ```sh
-docker compose --env-file deploy/.env -f deploy/compose.dev.yml up -d postgres redis keycloak vault
+docker compose --env-file deploy/.env -f deploy/compose.dev.yml up -d --wait
 ```
 
-Stop the Compose `api` service before launching the local API, since both use
-localhost port 8090. Apply pending migrations with the Compose `migrator` service
-before starting the API when the schema changes; the local launch profile does
-not run migrations automatically.
+Development Compose contains dependencies only. Run the local development
+migrator before starting the API:
+
+```sh
+dotnet run --project src/Backend/Migrator --launch-profile Development
+```
+
+The API and migrator share `Database:ConnectionString` through the same
+`UserSecretsId`. The development app account owns the database, public schema,
+tables and sequences so both processes can use that one connection. The migrator
+applies pending EF migrations without restricting audit or history permissions.
+It refuses to run outside Development. No migrator is included in the API image.
+
+For an existing local database created with the old restricted role, upgrade its
+ownership and grants once without deleting any data:
+
+```sh
+docker compose --env-file deploy/.env -f deploy/compose.dev.yml exec -T postgres \
+  sh -s < deploy/postgres/01-create-app-user.sh
+```
+
+This bootstrap is development-only and is also run on a fresh Compose database.
+It must never be applied to production.
 
 Select **Api: http** in Rider and debug the API as a local .NET process. Its URL
 is `http://localhost:8090`, matching the development Keycloak client's registered
@@ -124,10 +143,9 @@ Docker builds use the repository root as their context so these files are includ
 
 ```sh
 docker build -f src/Backend/Dockerfile --target final -t pam-api .
-docker build -f src/Backend/Dockerfile --target migrator -t pam-migrator .
 ```
 
-The Compose configuration uses the same context. The root `.dockerignore` allows
+Development Compose runs dependency images only. The root `.dockerignore` allows
 only backend source and shared build files, excluding build output and `.env` files.
 
 ## Shared agent instructions and skills
