@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Api.Authentication;
 using Application.AccessRequests;
+using Application.Common.Pagination;
 using Application.Sessions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -12,6 +13,15 @@ public static class AccessRequestEndpoints
     public static IEndpointRouteBuilder MapAccessRequestEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var requests = endpoints.MapGroup("/access-requests").WithTags("Access requests");
+        requests.MapGet("/mine", ListMine)
+            .WithName("AccessRequest.ListMine")
+            .WithSummary("List the authenticated caller's access requests")
+            .WithDescription("Returns only requests owned by the current PAM session, including denied requests "
+                + "and history for retired resources. Uses descending public-ID cursor pagination. "
+                + "Limit defaults to 20 and must be between 1 and 100. An empty result is an empty page.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
         requests.MapPost("", Submit)
             .WithName("AccessRequest.Create")
             .WithSummary("Submit an access request and evaluate Sprint 1 eligibility")
@@ -29,6 +39,21 @@ public static class AccessRequestEndpoints
             .ProducesProblem(StatusCodes.Status500InternalServerError);
 
         return endpoints;
+    }
+
+    private static async Task<Results<Ok<CursorPage<AccessRequestSummaryResponse>>, UnauthorizedHttpResult>> ListMine(
+        [AsParameters] AccessRequestListQuery query,
+        HttpContext context,
+        IAccessRequestService service,
+        CancellationToken cancellationToken)
+    {
+        if (!PamClaims.TryRead(context.User, out var identity))
+        {
+            return TypedResults.Unauthorized();
+        }
+
+        var page = await service.ListMineAsync(identity.Id, query.Limit, query.Cursor, cancellationToken);
+        return TypedResults.Ok(page);
     }
 
     private static async Task<Results<Created<AccessRequestResponse>, Ok<AccessRequestResponse>,

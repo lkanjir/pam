@@ -1,3 +1,4 @@
+using Application.Common.Pagination;
 using Application.Sessions;
 
 namespace Application.AccessRequests;
@@ -19,6 +20,12 @@ public sealed record AccessRequestSubmissionResult(AccessRequestSubmissionKind K
 
 public interface IAccessRequestService
 {
+    Task<CursorPage<AccessRequestSummaryResponse>> ListMineAsync(
+        long principalId,
+        int limit,
+        AccessRequestCursor? cursor,
+        CancellationToken cancellationToken = default);
+
     Task<AccessRequestSubmissionResult> SubmitAsync(
         CreateAccessRequestRequest request,
         string idempotencyKey,

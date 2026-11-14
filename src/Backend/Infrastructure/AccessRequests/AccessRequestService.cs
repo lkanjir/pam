@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using Application.AccessRequests;
+using Application.Common.Pagination;
 using Application.Sessions;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Entities;
@@ -11,6 +12,39 @@ namespace Infrastructure.AccessRequests;
 public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider timeProvider) : IAccessRequestService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public async Task<CursorPage<AccessRequestSummaryResponse>> ListMineAsync(
+        long principalId,
+        int limit,
+        AccessRequestCursor? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        // Request history remains visible after a resource is retired or soft-deleted.
+        var requests = dbContext.AccessRequests.IgnoreQueryFilters()
+            .Where(request => request.RequesterPrincipalId == principalId);
+        if (cursor is not null)
+        {
+            Guid lastPublicId = cursor.LastPublicId;
+            requests = requests.Where(request => request.PublicId.CompareTo(lastPublicId) < 0);
+        }
+
+        var items = await requests.OrderByDescending(request => request.PublicId)
+            .Select(request => new AccessRequestSummaryResponse(
+                request.PublicId, request.Entitlement.Resource.PublicId, request.Entitlement.Resource.Name,
+                request.Entitlement.PublicId, request.Entitlement.Name, request.RequestedDurationMinutes,
+                request.State, new DateTimeOffset(request.CreatedAt, TimeSpan.Zero)))
+            .Take(limit + 1)
+            .ToListAsync(cancellationToken);
+
+        bool hasNextPage = items.Count > limit;
+        if (hasNextPage)
+        {
+            items.RemoveAt(limit);
+        }
+
+        string? nextCursor = hasNextPage ? CursorCodec.Encode(new AccessRequestCursor(items[^1].Id)) : null;
+        return new CursorPage<AccessRequestSummaryResponse>(items, nextCursor);
+    }
 
     public async Task<AccessRequestSubmissionResult> SubmitAsync(
         CreateAccessRequestRequest request,
