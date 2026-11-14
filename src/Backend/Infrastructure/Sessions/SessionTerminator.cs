@@ -10,6 +10,13 @@ public sealed class SessionTerminator(
     TimeProvider timeProvider,
     ILogger<SessionTerminator> logger)
 {
+    private static readonly Action<ILogger, string, string, string, Exception?> LogSessionEndFailure =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Error,
+            new EventId(0),
+            "Session was revoked, but its ledger/audit end could not be persisted. " +
+            "Session hash: {SessionIdHash}; correlation: {CorrelationId}; error type: {ErrorType}.");
+
     public async Task EndSessionAsync(string sessionId, SessionEndReason reason, string correlationId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(correlationId);
@@ -33,12 +40,12 @@ public sealed class SessionTerminator(
         }
         catch (Exception exception)
         {
-            logger.LogError(
-                "Session was revoked, but its ledger/audit end could not be persisted. " +
-                "Session hash: {SessionIdHash}; correlation: {CorrelationId}; error type: {ErrorType}.",
+            LogSessionEndFailure(
+                logger,
                 sessionIdHash,
                 correlationId,
-                exception.GetType().Name);
+                exception.GetType().Name,
+                null);
         }
     }
 }

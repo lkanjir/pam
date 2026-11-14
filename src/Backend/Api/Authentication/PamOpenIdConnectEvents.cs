@@ -10,6 +10,12 @@ public sealed class PamOpenIdConnectEvents(
     IProblemDetailsService problemDetails,
     ILogger<PamOpenIdConnectEvents> logger) : OpenIdConnectEvents
 {
+    private static readonly Action<ILogger, string?, string, Exception?> LogLoginFailure =
+        LoggerMessage.Define<string?, string>(
+            LogLevel.Error,
+            new EventId(0),
+            "OIDC login failed. Error type: {ErrorType}, correlation: {CorrelationId}");
+
     public override async Task TokenValidated(TokenValidatedContext context)
     {
         string issuer = context.SecurityToken.Issuer;
@@ -59,10 +65,11 @@ public sealed class PamOpenIdConnectEvents(
             return;
         }
 
-        logger.LogError(
-            "OIDC login failed. Error type: {ErrorType}, correlation: {CorrelationId}",
+        LogLoginFailure(
+            logger,
             context.Failure?.GetType().FullName,
-            context.HttpContext.TraceIdentifier);
+            context.HttpContext.TraceIdentifier,
+            null);
 
         await WriteProblemAsync(context.HttpContext, StatusCodes.Status500InternalServerError);
     }
@@ -77,7 +84,8 @@ public sealed class PamOpenIdConnectEvents(
         await problemDetails.WriteAsync(
             new ProblemDetailsContext
             {
-                HttpContext = context, ProblemDetails = new ProblemDetails { Status = status, Title = title, }
+                HttpContext = context,
+                ProblemDetails = new ProblemDetails { Status = status, Title = title, }
             });
     }
 }

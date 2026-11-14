@@ -30,7 +30,9 @@ public sealed class PrincipalIdentityReader(PamDbContext dbContext) : IPrincipal
              """).ToListAsync(cancellationToken);
 
         if (rows.Count == 0)
+        {
             return null;
+        }
 
         var principal = rows[0];
         var roles = rows.Select(row => row.RoleCode).OfType<string>().ToArray();

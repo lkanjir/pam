@@ -9,14 +9,18 @@ internal static class SessionStartedFactory
         DateTimeOffset createdAt)
     {
         if (!PamClaims.TryRead(ticket.Principal, out var identity))
+        {
             throw new InvalidOperationException("Authentication ticket must contain a valid PAM identity.");
+        }
 
         var expiresAt = ticket.Properties.ExpiresUtc ??
                         throw new InvalidOperationException("Authentication ticket must have an expiration time.");
 
         var userAgent = context?.Request.Headers.UserAgent.ToString();
         if (userAgent?.Length > 2048)
+        {
             userAgent = userAgent[..2048];
+        }
 
         var sessionIdHash = SessionIdentifier.Hash(sessionId);
 

@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
-using Microsoft.AspNetCore.Authentication;
 using Application.Sessions;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using StackExchange.Redis;
 
@@ -34,7 +34,9 @@ public sealed class RedisTicketStore : ISessionTicketStore
             var stored = await _database.StringSetAsync(redisKey, payload, ttl, When.NotExists);
 
             if (stored)
+            {
                 return sessionId;
+            }
         }
 
         throw new InvalidOperationException("Unable to allocate unique session identifier.");
@@ -43,7 +45,9 @@ public sealed class RedisTicketStore : ISessionTicketStore
     public async Task<bool> TryRenewAsync(string key, AuthenticationTicket ticket)
     {
         if (!SessionIdentifier.IsValid(key))
+        {
             return false;
+        }
 
         var redisKey = GetRedisKey(key);
         var payload = Protect(ticket, redisKey);
@@ -55,7 +59,9 @@ public sealed class RedisTicketStore : ISessionTicketStore
                 || currentExpiry <= _timeProvider.GetUtcNow()
                 || ticket.Properties.ExpiresUtc is not { } proposedExpiry
                 || proposedExpiry <= currentExpiry)
+            {
                 return false;
+            }
 
             var ttl = GetTimeToLive(ticket);
             var transaction = _database.CreateTransaction();
@@ -63,7 +69,9 @@ public sealed class RedisTicketStore : ISessionTicketStore
             // Queue the write before executing; awaiting it here would deadlock.
             var write = transaction.StringSetAsync(redisKey, payload, ttl);
             if (await transaction.ExecuteAsync())
+            {
                 return await write;
+            }
         }
 
         // Under sustained contention, leave the winning ticket intact.
@@ -73,7 +81,9 @@ public sealed class RedisTicketStore : ISessionTicketStore
     public async Task<AuthenticationTicket?> RetrieveAsync(string key)
     {
         if (!SessionIdentifier.IsValid(key))
+        {
             return null;
+        }
 
         var redisKey = GetRedisKey(key);
         var value = await _database.StringGetAsync(redisKey);
@@ -86,7 +96,10 @@ public sealed class RedisTicketStore : ISessionTicketStore
     private AuthenticationTicket? Unprotect(RedisValue value, string redisKey)
     {
         if (value.IsNull)
+        {
             return null;
+        }
+
         try
         {
             var serialized = _protector.CreateProtector(redisKey).Unprotect(value!);
@@ -101,7 +114,9 @@ public sealed class RedisTicketStore : ISessionTicketStore
     public async Task RemoveAsync(string key)
     {
         if (!SessionIdentifier.IsValid(key))
+        {
             return;
+        }
 
         await _database.KeyDeleteAsync(GetRedisKey(key));
     }
@@ -117,7 +132,9 @@ public sealed class RedisTicketStore : ISessionTicketStore
     private TimeSpan GetTimeToLive(AuthenticationTicket ticket)
     {
         if (ticket.Properties.ExpiresUtc is not { } expireAt)
+        {
             throw new InvalidOperationException("Authentication ticket must have an expiration time");
+        }
 
         var ttl = expireAt - _timeProvider.GetUtcNow();
         return ttl < TimeSpan.FromMilliseconds(1)

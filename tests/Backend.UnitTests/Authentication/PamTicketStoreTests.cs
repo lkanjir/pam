@@ -1,8 +1,8 @@
 using Application.Sessions;
 using Backend.Tests.Support;
 using FakeItEasy;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 
 namespace Backend.UnitTests.Authentication;
 

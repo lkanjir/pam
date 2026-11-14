@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Net;
 using Backend.IntegrationTests.Fixtures;
 using Backend.Tests.Support;
 using Infrastructure.Persistence.Entities;
@@ -5,7 +7,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using System.Net;
 using static Backend.IntegrationTests.Sessions.SessionTestHost;
 
 namespace Backend.IntegrationTests.Sessions;
@@ -29,7 +30,7 @@ public sealed class CookieRotationTests(PostgresFixture postgres, RedisFixture r
         await using var scope = services.CreateAsyncScope();
         var context = CreateContext(scope.ServiceProvider);
         context.Request.Headers.Cookie = oldCookie;
-        var ticket = SessionTestData.Ticket(clock.Now, second.Id.ToString());
+        var ticket = SessionTestData.Ticket(clock.Now, second.Id.ToString(CultureInfo.InvariantCulture));
         var identity = (System.Security.Claims.ClaimsIdentity)ticket.Principal.Identity!;
         identity.RemoveClaim(identity.FindFirst("sub")!);
         identity.AddClaim(new System.Security.Claims.Claim("sub", "bob"));

@@ -13,11 +13,19 @@ public sealed class PamTicketStore(
     PamSessionLifetime sessionLifetime,
     ILogger<PamTicketStore> logger) : ITicketStore
 {
+    private static readonly Action<ILogger, string, string?, Exception?> LogUnissuedSessionRemovalFailure =
+        LoggerMessage.Define<string, string?>(
+            LogLevel.Error,
+            new EventId(0),
+            "Failed to remove an unissued session. " +
+            "Error type: {ErrorType}; correlation: {CorrelationId}. " +
+            "The stored ticket will expire through its TTL.");
+
     public Task<string> StoreAsync(AuthenticationTicket ticket) =>
         StoreCoreAsync(ticket, null, CancellationToken.None);
 
-    public Task<string> StoreAsync(AuthenticationTicket ticket, CancellationToken token) =>
-        StoreCoreAsync(ticket, null, token);
+    public Task<string> StoreAsync(AuthenticationTicket ticket, CancellationToken cancellationToken) =>
+        StoreCoreAsync(ticket, null, cancellationToken);
 
     public Task<string> StoreAsync(
         AuthenticationTicket ticket,
@@ -58,32 +66,36 @@ public sealed class PamTicketStore(
         }
         catch (Exception ex)
         {
-            logger.LogError("Failed to remove an unissued session. " +
-                            "Error type: {ErrorType}; correlation: {CorrelationId}. " +
-                            "The stored ticket will expire through its TTL.",
+            LogUnissuedSessionRemovalFailure(
+                logger,
                 ex.GetType().Name,
-                correlationId);
+                correlationId,
+                null);
         }
     }
 
     public Task RenewAsync(string key, AuthenticationTicket ticket) => RenewAsync(key, ticket, CancellationToken.None);
 
-    public async Task RenewAsync(string key, AuthenticationTicket ticket, CancellationToken token)
+    public async Task RenewAsync(string key, AuthenticationTicket ticket, CancellationToken cancellationToken)
     {
-        token.ThrowIfCancellationRequested();
+        cancellationToken.ThrowIfCancellationRequested();
         if (!sessionLifetime.TryLimitExpiration(ticket.Properties))
+        {
             return;
+        }
 
         await using var scope = scopeFactory.CreateAsyncScope();
         var ledgerWriter = scope.ServiceProvider.GetRequiredService<ISessionLedgerWriter>();
 
         var renewed = await ticketStore.TryRenewAsync(key, ticket);
         if (!renewed)
+        {
             return;
+        }
 
         var expiresAt = ticket.Properties.ExpiresUtc!.Value;
 
-        await ledgerWriter.RecordRenewedAsync(SessionIdentifier.Hash(key), expiresAt, token);
+        await ledgerWriter.RecordRenewedAsync(SessionIdentifier.Hash(key), expiresAt, cancellationToken);
     }
 
     public async Task<AuthenticationTicket?> RetrieveAsync(string key)
