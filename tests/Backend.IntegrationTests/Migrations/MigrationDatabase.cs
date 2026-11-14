@@ -10,7 +10,6 @@ namespace Backend.IntegrationTests.Migrations;
 
 internal sealed class MigrationDatabase(PostgreSqlContainer container) : IAsyncDisposable
 {
-    private static readonly string[] BootstrapCommand = ["sh", "/tmp/dev-bootstrap.sh"];
     public const string AppUser = "api_development";
     public const string AppPassword = "isolated-test-password";
 
@@ -24,38 +23,30 @@ internal sealed class MigrationDatabase(PostgreSqlContainer container) : IAsyncD
 
     public static async Task<MigrationDatabase> StartAsync(bool bootstrap = true)
     {
-        var container = new PostgreSqlBuilder("postgres:18.0-alpine")
+        var builder = new PostgreSqlBuilder("postgres:18.0-alpine")
             .WithDatabase("pam_migrations")
             .WithUsername("migration_admin")
             .WithPassword("isolated-admin-password")
             .WithEnvironment("APP_DB_USER", AppUser)
-            .WithEnvironment("APP_DB_PASSWORD", AppPassword)
-            .WithResourceMapping(new FileInfo(Path.Combine(AppContext.BaseDirectory, "MigrationScripts/dev-bootstrap.sh")),
-                new FileInfo("/tmp/dev-bootstrap.sh"))
-            .Build();
+            .WithEnvironment("APP_DB_PASSWORD", AppPassword);
+        if (bootstrap)
+        {
+            builder = builder.WithResourceMapping(
+                new FileInfo(Path.Combine(AppContext.BaseDirectory, "MigrationScripts/dev-bootstrap.sh")),
+                new FileInfo("/docker-entrypoint-initdb.d/01-create-app-user.sh"));
+        }
+
+        var container = builder.Build();
         try
         {
             await container.StartAsync();
-            var database = new MigrationDatabase(container);
-            if (bootstrap)
-            {
-                await database.BootstrapAsync();
-            }
-
-            return database;
+            return new MigrationDatabase(container);
         }
         catch
         {
             await container.DisposeAsync();
             throw;
         }
-    }
-
-    public async Task BootstrapAsync()
-    {
-        var result = await Container.ExecAsync(BootstrapCommand);
-        Assert.True(result.ExitCode == 0, result.Stdout + result.Stderr);
-        Assert.Contains("COMMIT", result.Stdout, StringComparison.Ordinal);
     }
 
     public async Task<(int ExitCode, string Error)> RunAsync()

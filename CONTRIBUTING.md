@@ -48,16 +48,11 @@ tables and sequences so both processes can use that one connection. The migrator
 applies pending EF migrations without restricting audit or history permissions.
 It refuses to run outside Development. No migrator is included in the API image.
 
-For an existing local database created with the old restricted role, upgrade its
-ownership and grants once without deleting any data:
-
-```sh
-docker compose --env-file deploy/.env -f deploy/compose.dev.yml exec -T postgres \
-  sh -s < deploy/postgres/01-create-app-user.sh
-```
-
-This bootstrap is development-only and is also run on a fresh Compose database.
-It must never be applied to production.
+PostgreSQL runs `deploy/postgres/01-create-app-user.sh` automatically through
+`/docker-entrypoint-initdb.d` when initializing an empty data directory. It creates
+the development app role and gives it database/schema ownership. Existing dev
+databases are disposable; the bootstrap does not upgrade old volumes or run on
+container restarts.
 
 The API runs as a local .NET process. Its URL is `http://localhost:8090`, matching
 the development Keycloak client's registered

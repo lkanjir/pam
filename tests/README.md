@@ -75,9 +75,9 @@ outside the current coverage. No sleeps or Keycloak calls are needed.
 ## Migration environments
 
 `DevelopmentMigratorTests` covers the Development guard, shared configuration,
-cancellation and credential-safe failures. `DevelopmentDatabaseTests` runs the
-actual dev bootstrap and migrator as the app role, including repeated execution
-and transferring existing schema ownership while preserving rows.
+cancellation and credential-safe failures. `DevelopmentDatabaseTests` lets
+PostgreSQL run the actual dev bootstrap on initial container startup, then checks
+that the app role can migrate, manipulate schema and repeat the migration run.
 
 `ProductionDatabaseTests` applies EF-generated idempotent SQL twice as an admin
 without running the dev migrator, then checks the applied migration IDs. These

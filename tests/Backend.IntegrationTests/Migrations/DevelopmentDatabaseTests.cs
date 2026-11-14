@@ -55,35 +55,4 @@ public sealed class DevelopmentDatabaseTests
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
     }
 
-    [Fact]
-    public async Task Bootstrap_ExistingRestrictedDatabase_TransfersOwnershipWithoutLosingData()
-    {
-        // Arrange
-        await using var database = await MigrationDatabase.StartAsync(bootstrap: false);
-        await using var context = database.Context(admin: true);
-        await context.Database.MigrateAsync();
-        await database.ExecuteAdminAsync("""
-            CREATE ROLE api_development LOGIN PASSWORD 'isolated-test-password';
-            GRANT CONNECT ON DATABASE pam_migrations TO api_development;
-            GRANT USAGE ON SCHEMA public TO api_development;
-            CREATE TABLE public.preserved_data (id integer PRIMARY KEY, note text);
-            INSERT INTO public.preserved_data VALUES (1, 'keep this row');
-            """);
-
-        // Act
-        await database.BootstrapAsync();
-        await database.BootstrapAsync();
-        var result = await database.RunAsync();
-
-        // Assert
-        Assert.Equal((0, string.Empty), result);
-        await using var connection = new NpgsqlConnection(database.AppConnection);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand("SELECT note FROM public.preserved_data WHERE id = 1", connection);
-        Assert.Equal("keep this row", await command.ExecuteScalarAsync());
-        await using var ownership = new NpgsqlCommand("""
-            SELECT tableowner FROM pg_tables WHERE schemaname = 'public' AND tablename = 'audit_events'
-            """, connection);
-        Assert.Equal(MigrationDatabase.AppUser, await ownership.ExecuteScalarAsync());
-    }
 }
