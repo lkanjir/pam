@@ -16,5 +16,4 @@ DOTNET_ENVIRONMENT=Production ASPNETCORE_ENVIRONMENT=Production \
     dotnet ef migrations script "$1" "$2" --idempotent \
     --project src/Backend/Infrastructure --startup-project src/Backend/Api \
     --context PamDbContext --output "$output/schema.sql"
-cp deploy/production/app-permissions.sql "$output/app-permissions.sql"
-printf 'Review and test both SQL files in %s before manual production application.\n' "$output"
+printf 'Review schema.sql in %s before manual production application.\n' "$output"

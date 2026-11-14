@@ -95,36 +95,15 @@ dotnet tool restore
 bash scripts/export-db-migration.sh 0 20261028204341_AddAuditEventNavigation artifacts/db-release
 ```
 
-The command generates `schema.sql` and copies `app-permissions.sql`; it never
-connects to a database. For subsequent releases, replace `0` with the migration
-currently applied in production and specify the release's exact target ID.
-Archive both reviewed files with the release. Review destructive operations and
-test the pair on a restored production backup, including the recovery plan.
+The command generates only `schema.sql` and never connects to a database. For
+subsequent releases, replace `0` with the migration currently applied in
+production and specify the release's exact target ID.
 
-The admin provisions the database and a separate API login. The admin/schema
-owner retains ownership of all application objects; the API login must have no
-administrative attributes, ownership or role memberships that grant schema
-changes. Never use the development bootstrap or shared development role here.
-Using the admin's normal secure connection setup (no credentials in scripts),
-manually run, in order:
-
-```sh
-psql -X --set=ON_ERROR_STOP=1 --file=artifacts/db-release/schema.sql
-psql -X --set=ON_ERROR_STOP=1 --set=api_role=pam_api --file=artifacts/db-release/app-permissions.sql
-```
-
-Run both files as the same schema owner or an authorized DBA. Serialize releases:
-SQL scripts do not acquire EF's runtime migration lock. Stop on any error and
-keep API traffic stopped until both files succeed. Back up first; restore or
-apply a separately reviewed corrective script if a release fails. Do not assume
-an idempotent script makes destructive changes or automatic rollback safe.
-
-The permissions script grants CRUD on application tables, read/append access to
-audit events, and sequence usage. It denies schema/database creation and all
-access to EF migration history, and refuses API ownership or inherited privileges
-that bypass those restrictions. Apply it after **every** schema release, including
-new tables. Configure only this restricted API login in production secrets.
-Development intentionally retains schema ownership and broader audit permissions.
+The production admin reviews the SQL, connects to PostgreSQL using Rider or
+another database tool (for example, through an SSH tunnel), and runs the script
+with their admin account before deploying the matching API version. Production
+account provisioning and permissions are managed by the admin; the API account
+must not have schema migration privileges. No permissions script is generated.
 
 ## C# formatting
 

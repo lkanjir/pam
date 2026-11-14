@@ -32,8 +32,6 @@ internal sealed class MigrationDatabase(PostgreSqlContainer container) : IAsyncD
             .WithEnvironment("APP_DB_PASSWORD", AppPassword)
             .WithResourceMapping(new FileInfo(Path.Combine(AppContext.BaseDirectory, "MigrationScripts/dev-bootstrap.sh")),
                 new FileInfo("/tmp/dev-bootstrap.sh"))
-            .WithResourceMapping(new FileInfo(Path.Combine(AppContext.BaseDirectory, "MigrationScripts/app-permissions.sql")),
-                new FileInfo("/tmp/app-permissions.sql"))
             .Build();
         try
         {
@@ -68,14 +66,6 @@ internal sealed class MigrationDatabase(PostgreSqlContainer container) : IAsyncD
         using var error = new StringWriter(CultureInfo.InvariantCulture);
         int result = await DevelopmentMigrator.RunAsync(configuration, "Development", output, error);
         return (result, error.ToString());
-    }
-
-    public async Task<(long ExitCode, string Error)> ApplyProductionPermissionsAsync()
-    {
-        string[] command = ["psql", "-X", "-U", "migration_admin", "-d", "pam_migrations",
-            "--set=api_role=" + AppUser, "--file=/tmp/app-permissions.sql"];
-        var result = await Container.ExecAsync(command);
-        return (result.ExitCode ?? -1, result.Stderr);
     }
 
     public PamDbContext Context(bool admin = false) => new(new DbContextOptionsBuilder<PamDbContext>()
