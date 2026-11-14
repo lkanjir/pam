@@ -257,7 +257,7 @@ focused run. `bash scripts/check.sh` then passed locked restore, formatting,
 analyzers, Release build (zero warnings/errors), **62 unit tests and 155
 integration tests**, with no failures or skips.
 
-## Own-request list
+## Own-request queries
 
 `OwnAccessRequestListTests` exercises `/api/access-requests/mine` through the
 real cookie pipeline, PostgreSQL and Redis. It checks session ownership before
@@ -265,6 +265,14 @@ pagination, pending and denied summaries, empty pages, cursor continuation,
 default/minimum/maximum limits, invalid pagination, historical visibility after
 retirement, unauthenticated access and the generated OpenAPI contract. GET does
 not require an antiforgery token or write audit records.
+
+`OwnAccessRequestDetailTests` follows the submission's `Location` to
+`/api/access-requests/{requestId}` and checks pending/denied request data, the
+persisted policy result and the two initial audit summaries. Foreign and missing
+requests both return 404 Problem Details. Historical details remain readable
+after retirement and eligibility changes. Other requests' audit events, internal
+events, policy evidence and raw audit snapshots/metadata are not exposed. Tests
+also verify authentication and OpenAPI for the detail response.
 
 ## Access-request submission
 
