@@ -67,11 +67,12 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
             resource.ModifiedAt);
     }
 
-    public async Task<ResourceResponse?> UpdateAsync(
+    public async Task<ResourceWriteResult> UpdateAsync(
         Guid publicId,
         UpdateResourceRequest request,
         PrincipalSnapshot actor,
         string correlationId,
+        uint expectedVersion,
         CancellationToken cancellationToken = default)
     {
         var resource = await dbContext.ManagedResources
@@ -79,7 +80,12 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
 
         if (resource is null)
         {
-            return null;
+            return new(ResourceWriteKind.NotFound);
+        }
+
+        if (resource.Version != expectedVersion)
+        {
+            return new(ResourceWriteKind.Conflict);
         }
 
         var now = timeProvider.GetUtcNow();
@@ -90,13 +96,21 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
         resource.IsActive = request.IsActive;
         resource.ModifiedAt = now.UtcDateTime;
         resource.ModifiedByPrincipalId = actor.Id;
+        dbContext.Entry(resource).Property(item => item.ModifiedAt).IsModified = true;
 
         dbContext.AuditEvents.Add(CreateAuditEvent(
             "resource.updated", resource, actor, now.UtcDateTime, correlationId));
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return new(ResourceWriteKind.Conflict);
+        }
 
-        return new ResourceResponse(
+        return new(ResourceWriteKind.Succeeded, new ResourceResponse(
             resource.PublicId,
             resource.Name,
             resource.Description,
@@ -104,7 +118,10 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
             resource.Environment,
             resource.IsActive,
             resource.CreatedAt,
-            resource.ModifiedAt);
+            resource.ModifiedAt)
+        {
+            Version = resource.Version
+        });
     }
 
     public async Task<bool> DeleteAsync(

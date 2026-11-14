@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net.Http.Json;
 using Api.Authentication;
+using Api.Resources;
 using Backend.IntegrationTests.Fixtures;
 using Backend.IntegrationTests.Sessions;
 using Backend.Tests.Support;
@@ -87,6 +88,7 @@ internal sealed class ResourceTestContext : IAsyncDisposable
         SessionTestHost.UpdateCookie(Client, antiforgery);
         var tokens = await antiforgery.Content.ReadFromJsonAsync<AntiforgeryTokenResponse>();
         Client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", tokens!.RequestToken);
+        Client.DefaultRequestHeaders.IfMatch.ParseAdd(ResourceEtags.Format(Resource.Version));
     }
 
     public Task<ManagedResource> ReadResourceAsync()

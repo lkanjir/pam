@@ -13,11 +13,12 @@ public interface IResourceService
         string correlationId,
         CancellationToken cancellationToken = default);
 
-    Task<ResourceResponse?> UpdateAsync(
+    Task<ResourceWriteResult> UpdateAsync(
         Guid publicId,
         UpdateResourceRequest request,
         PrincipalSnapshot actor,
         string correlationId,
+        uint expectedVersion,
         CancellationToken cancellationToken = default);
 
     Task<bool> DeleteAsync(

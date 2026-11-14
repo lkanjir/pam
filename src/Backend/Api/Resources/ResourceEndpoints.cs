@@ -3,6 +3,7 @@ using Application.Common.Pagination;
 using Application.Resources;
 using Application.Sessions;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Api.Resources;
 
@@ -23,7 +24,12 @@ public static class ResourceEndpoints
         resources.MapGet("/{id:guid}", GetById).WithName(GetByIdRouteName)
             .WithDescription("Returns a strong ETag identifying the resource version for conditional updates.");
         resources.MapPost("", Create).ProducesValidationProblem();
-        resources.MapPut("/{id:guid}", Update).ProducesValidationProblem();
+        resources.MapPut("/{id:guid}", Update).WithResourceVersion().ProducesValidationProblem()
+            .WithDescription("Requires one strong resource ETag in If-Match. Missing preconditions return 428; "
+                + "a stale version or concurrent write returns 412 without changing the resource or its audit.")
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status412PreconditionFailed)
+            .ProducesProblem(StatusCodes.Status428PreconditionRequired);
         resources.MapDelete("/{id:guid}", Delete).ProducesProblem(StatusCodes.Status400BadRequest);
 
         return endpoints;
@@ -104,9 +110,10 @@ public static class ResourceEndpoints
             new { id = resource.Id });
     }
 
-    private static async Task<Results<Ok<ResourceResponse>, NotFound, UnauthorizedHttpResult>> Update(
+    private static async Task<Results<Ok<ResourceResponse>, NotFound, UnauthorizedHttpResult, ProblemHttpResult>> Update(
         Guid id,
         UpdateResourceRequest request,
+        [FromHeader(Name = "If-Match")] string? ifMatch,
         HttpContext context,
         IResourceService resourceService,
         CancellationToken cancellationToken)
@@ -116,6 +123,11 @@ public static class ResourceEndpoints
             return TypedResults.Unauthorized();
         }
 
+        if (ResourceEtags.RequireVersion(context.Request, ifMatch, out uint version) is { } precondition)
+        {
+            return precondition;
+        }
+
         var actor = new PrincipalSnapshot(
             identity.Id,
             identity.PublicId,
@@ -123,14 +135,27 @@ public static class ResourceEndpoints
             identity.Issuer,
             identity.Subject);
 
-        var resource = await resourceService.UpdateAsync(
+        var result = await resourceService.UpdateAsync(
             id,
             request,
             actor,
             context.TraceIdentifier,
+            version,
             cancellationToken);
 
-        return resource is null ? TypedResults.NotFound() : TypedResults.Ok(resource);
+        if (result.Kind == ResourceWriteKind.Conflict)
+        {
+            return TypedResults.Problem(statusCode: StatusCodes.Status412PreconditionFailed);
+        }
+
+        if (result.Kind == ResourceWriteKind.NotFound)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var resource = result.Resource ?? throw new InvalidOperationException("Update returned no resource.");
+        context.Response.Headers.ETag = ResourceEtags.Format(resource.Version);
+        return TypedResults.Ok(resource);
     }
 
     private static async Task<Results<NoContent, NotFound, UnauthorizedHttpResult>> Delete(
