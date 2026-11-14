@@ -177,6 +177,64 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
         return new CursorPage<ResourceResponse>(items, nextCursor);
     }
 
+    public async Task<CursorPage<ResourceResponse>> ListRequestableAsync(
+        long principalId,
+        int limit,
+        ResourceCursor? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        var entitlements = dbContext.Entitlements.Where(entitlement => entitlement.IsActive
+            && entitlement.EligibilityRules.Any(rule => rule.PrincipalId == principalId && rule.IsEnabled));
+
+        var resources = dbContext.ManagedResources.Where(resource => resource.IsActive
+            && entitlements.Any(entitlement => entitlement.ResourceId == resource.Id));
+
+        if (cursor is not null)
+        {
+            Guid lastPublicId = cursor.LastPublicId;
+            resources = resources.Where(resource => resource.PublicId.CompareTo(lastPublicId) > 0);
+        }
+
+        var items = await resources
+            .OrderBy(resource => resource.PublicId)
+            .Take(limit + 1)
+            .Select(resource => new ResourceResponse(
+                resource.PublicId,
+                resource.Name,
+                resource.Description,
+                resource.ResourceType,
+                resource.Environment,
+                resource.IsActive,
+                resource.CreatedAt,
+                resource.ModifiedAt)
+            {
+                Entitlements = entitlements
+                    .Where(entitlement => entitlement.ResourceId == resource.Id)
+                    .OrderBy(entitlement => entitlement.PublicId)
+                    .Select(entitlement => new RequestableEntitlementResponse(
+                        entitlement.PublicId,
+                        entitlement.Code,
+                        entitlement.Name,
+                        entitlement.MaxDurationMinutes,
+                        entitlement.RequiresApproval,
+                        entitlement.RequiresTicket))
+                    .ToList()
+            })
+            .ToListAsync(cancellationToken);
+
+        bool hasNextPage = items.Count > limit;
+        if (hasNextPage)
+        {
+            items.RemoveAt(limit);
+        }
+
+        string? nextCursor = hasNextPage
+            ? CursorCodec.Encode(new ResourceCursor(items[^1].Id))
+            : null;
+
+        return new CursorPage<ResourceResponse>(items, nextCursor);
+    }
+
     private static AuditEvent CreateAuditEvent(
         string eventType,
         ManagedResource resource,

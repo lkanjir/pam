@@ -4,7 +4,7 @@ description: >
   Guides creation and modification of ASP.NET Core Web API endpoints with
   correct HTTP semantics, OpenAPI metadata, and error handling.
   USE FOR: adding new API endpoints (controllers or minimal APIs), wiring up
-  OpenAPI/Swagger, creating .http test files, setting up global error handling
+  OpenAPI/Swagger, documenting endpoint contracts, setting up global error handling
   middleware.
   DO NOT USE FOR: general C# coding style, EF Core data access or query
   optimization (use optimizing-ef-core-queries), frontend/Blazor work, gRPC
@@ -24,7 +24,6 @@ Use this skill when working on ASP.NET Core HTTP APIs, including:
 - adding or modifying Web API endpoints implemented with controllers or minimal APIs;
 - wiring up OpenAPI/Swagger metadata and endpoint documentation;
 - defining request/response DTOs and consistent HTTP status code behavior;
-- adding `.http` files or similar request-based API testing artifacts;
 - configuring centralized API error handling middleware or exception mapping.
 
 ## When Not to Use
@@ -419,43 +418,32 @@ builder.Services.AddScoped<IProductService, ProductService>();
 For EF Core data access patterns (migrations, Fluent API configuration,
 `AsNoTracking`, seed data), see the `optimizing-ef-core-queries` skill.
 
-### Step 7: Create a .http test file
+### Step 7: Document endpoint contracts in OpenAPI
 
-After implementing endpoints, create a `.http` file in the project root that
-demonstrates how to call every new endpoint. This serves as living
-documentation and a quick manual test harness.
+Do not create `.http` request or test files. Document new and changed endpoints
+in the generated OpenAPI contract using the existing API setup.
 
-```http
-@baseUrl = http://localhost:5000
+For minimal APIs:
 
-### Get all products
-GET {{baseUrl}}/api/products
+- Use stable, unique `.WithName(...)` operation names, `.WithSummary(...)`,
+  `.WithDescription(...)` and `.WithTags(...)` on endpoints or route groups as
+  appropriate.
+- Prefer `TypedResults` and explicit `Results<...>` return types so success
+  response metadata is inferred. Add `.Produces<T>(...)` only where the handler
+  signature does not describe the response contract.
+- Use `.ProducesProblem(...)` and `.ProducesValidationProblem(...)` to document
+  error status codes and bodies not inferred from the handler signature.
+- Keep DTO annotations and XML documentation aligned with the generated schema.
+  Describe query parameters, defaults, limits and conditional response fields.
 
-### Get product by ID
-GET {{baseUrl}}/api/products/1
-
-### Create a product
-POST {{baseUrl}}/api/products
-Content-Type: application/json
-
-{
-  "name": "Wireless Mouse",
-  "price": 29.99,
-  "category": "Electronics"
-}
-
-### Delete a product
-DELETE {{baseUrl}}/api/products/1
-```
-
-Include at least one request per endpoint with realistic bodies. Show error
-paths (e.g., non-existent IDs). Match the port to `launchSettings.json`.
+Use the project's HTTP integration-test pipeline to verify generated OpenAPI
+and endpoint behavior; do not add separate request files as documentation.
 
 ### Step 8: Build and verify
 
 1. Run `dotnet build` — confirm zero errors and zero warnings.
 2. Start the app and verify the OpenAPI document loads (default: `/openapi/v1.json`).
-3. Run the requests in the `.http` file and confirm correct status codes.
+3. Run the relevant HTTP integration tests to verify response status codes and the generated OpenAPI contract.
 
 ## Validation
 
@@ -471,7 +459,7 @@ paths (e.g., non-existent IDs). Match the port to `launchSettings.json`.
 - [ ] Domain entities are not exposed directly in API request/response bodies
 - [ ] All API-exposed DTOs have `<summary>` XML doc comments
 - [ ] Date and time properties use `DateTimeOffset`, not `DateTime`
-- [ ] A `.http` file exists with a request for every new endpoint
+- [ ] Endpoint contracts are documented in OpenAPI; no `.http` request files are created
 - [ ] `dotnet build` passes with zero errors and zero warnings
 - [ ] All DTOs are `sealed record` types (not mutable classes)
 - [ ] Minimal API handlers use `TypedResults` with explicit `Results<T1, T2>` return types
@@ -485,7 +473,7 @@ paths (e.g., non-existent IDs). Match the port to `launchSettings.json`.
 | Exposing domain entities as API responses | Create separate `sealed record` request/response types. Entities leak navigation properties and internal fields. |
 | Forgetting `CancellationToken` | Add to every endpoint and forward through the entire async call chain. |
 | Returning `200 OK` from POST create | Return `201 Created` with a `Location` header. |
-| Missing OpenAPI metadata | Chain `.WithName()`, `.WithSummary()`, `.WithDescription()`, `.Produces<T>()` on every endpoint. |
+| Missing OpenAPI metadata | Use `.WithName()`, `.WithSummary()`, `.WithDescription()` and `.WithTags()` as appropriate. Preserve `TypedResults` inference; add `.Produces<T>()`, `.ProducesProblem()` and `.ProducesValidationProblem()` where needed. |
 | Injecting data stores directly into endpoints | Use a service layer with an interface for separation and testability. |
 | Mixing controller and minimal API styles | Pick one per project and be consistent. |
 | `TypedResults` in ternary without explicit return type | `Ok<T>` and `NotFound` have no common base — annotate with `Task<Results<Ok<T>, NotFound>>` or fall back to `Results` factory. |

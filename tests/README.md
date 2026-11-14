@@ -229,6 +229,23 @@ invalid cursors/limits and authentication. These are HTTP/storage tests; unit te
 do not mock EF query behavior. Concurrent writes currently use EF's default
 last-writer-wins behavior; ETags/version preconditions are not implemented.
 
+## Requestable resources
+
+`RequestableResourceTests` exercises `GET /api/resources?requestable=true` through
+the production HTTP pipeline with PostgreSQL, Redis and real PAM cookie sessions.
+It verifies caller-specific enabled eligibility, active resources/entitlements,
+soft deletion, public identifiers and form constraints, empty results, filtering
+before cursor pagination, invalid query Problem Details and anonymous rejection.
+Management-list regressions verify that omitted/false `requestable` still returns
+inactive targets and omits `entitlements`. The OpenAPI test checks the boolean
+filter and entitlement response contract. Request-submission policy enforcement
+remains separate work.
+
+Verification on 2026-11-14: all **21 requestable-resource cases** passed in the
+focused run. `bash scripts/check.sh` then passed locked restore, formatting,
+analyzers, Release build (zero warnings/errors), **62 unit tests and 155
+integration tests**, with no failures or skips.
+
 ## Audit payload contract
 
 `SessionStarted` groups `PrincipalSnapshot` and `SessionRequestMetadata` separately

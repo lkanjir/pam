@@ -30,4 +30,10 @@ public interface IResourceService
         int limit,
         ResourceCursor? cursor,
         CancellationToken cancellationToken = default);
+
+    Task<CursorPage<ResourceResponse>> ListRequestableAsync(
+        long principalId,
+        int limit,
+        ResourceCursor? cursor,
+        CancellationToken cancellationToken = default);
 }

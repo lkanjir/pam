@@ -14,7 +14,12 @@ public static class ResourceEndpoints
     {
         var resources = endpoints.MapGroup("/resources").WithTags("Resources");
 
-        resources.MapGet("", List).ProducesProblem(StatusCodes.Status400BadRequest);
+        resources.MapGet("", List)
+            .WithSummary("List managed resources or the caller's requestable resources")
+            .WithDescription("Set requestable=true to include only active resources with active entitlements "
+                + "enabled for the current user. Each item then includes the available entitlements and their "
+                + "duration, approval and ticket requirements. Uses limit and cursor pagination.")
+            .ProducesProblem(StatusCodes.Status400BadRequest);
         resources.MapGet("/{id:guid}", GetById).WithName(GetByIdRouteName);
         resources.MapPost("", Create).ProducesValidationProblem();
         resources.MapPut("/{id:guid}", Update).ProducesValidationProblem();
@@ -23,11 +28,28 @@ public static class ResourceEndpoints
         return endpoints;
     }
 
-    private static async Task<Ok<CursorPage<ResourceResponse>>> List(
+    private static async Task<Results<Ok<CursorPage<ResourceResponse>>, UnauthorizedHttpResult>> List(
         [AsParameters] ResourceListQuery query,
+        HttpContext context,
         IResourceService resourceService,
         CancellationToken cancellationToken)
     {
+        if (query.Requestable)
+        {
+            if (!PamClaims.TryRead(context.User, out var identity))
+            {
+                return TypedResults.Unauthorized();
+            }
+
+            var requestablePage = await resourceService.ListRequestableAsync(
+                identity.Id,
+                query.Limit,
+                query.Cursor,
+                cancellationToken);
+
+            return TypedResults.Ok(requestablePage);
+        }
+
         var page = await resourceService.ListAsync(
             query.Limit,
             query.Cursor,

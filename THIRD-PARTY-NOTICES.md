@@ -5,6 +5,11 @@ The shared skills under `.agents/skills` are copied from
 `2877c712edc20643b72f64e2983b168e6661d607`. The exact paths and SHA-256 content
 hashes are recorded in `agent-skills.lock.json`.
 
+The `dotnet-webapi` skill includes a PAM-specific modification replacing `.http`
+request-file creation with Minimal API OpenAPI metadata and contract verification.
+The revision above identifies the upstream base; the lock file hashes include
+this local modification.
+
 They are distributed under this license:
 
 ```text
