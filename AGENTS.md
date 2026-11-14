@@ -20,6 +20,30 @@ Read `CONTRIBUTING.md` and the nearest applicable `AGENTS.md` before changing co
   add null-forgiving operators or skip tests just to make checks green. A necessary
   narrow exception needs a specific technical rationale and review.
 
+## Incremental delivery and commits
+
+- Implement one small vertical slice at a time: a complete observable behavior
+  that can be tested independently. Identify that boundary before changing code.
+- Add only the DTO fields, interface methods, application/service logic,
+  persistence and endpoint code needed for that slice. Expand existing types as
+  later slices require them; avoid scaffolding the whole feature up front.
+- Use adjacent implementation/test commit pairs: commit the working slice, then
+  add and commit its focused tests before starting the next slice. Make these
+  small local commits throughout the work rather than collecting the entire
+  feature into one final commit. Review each implementation/test pair together.
+- Every commit must build and preserve existing tests. Include any adjustments
+  to existing tests needed to keep the implementation commit valid; put the new
+  regression cases in its immediately following test commit.
+- Keep the slice's required authentication, authorization, validation and data
+  integrity guarantees in its implementation commit. For example, a persisted
+  business change and its required audit records must be atomic from the first
+  working version of that slice.
+- Run the relevant focused checks for each completed pair and the full required
+  backend check before handoff. Commit messages should identify the behavior
+  implemented or tested so the sequence is understandable without the chat.
+- Put unrelated tooling, skill and contributor-instruction changes in their own
+  commits. Keep documentation needed to understand a slice with that slice.
+
 ## Shared skills
 
 The reviewed team skills live in `.agents/skills`; provenance and file hashes are
