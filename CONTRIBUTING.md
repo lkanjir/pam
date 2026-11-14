@@ -73,8 +73,52 @@ User Secrets in Development. Environment variables override User Secrets, so
 remove stale Docker connection overrides from the local Rider profile.
 
 Non-secret host defaults belong in `appsettings.Development.json`: Redis uses
-`127.0.0.1:6379`, and Keycloak metadata uses `localhost:8080`. Compose supplies
-its own container-host overrides when running the entire stack in Docker.
+`127.0.0.1:6379`, and Keycloak metadata uses `localhost:8080`.
+
+## Production database releases
+
+Production has no migrator service, image target or API startup migration. A
+database admin applies reviewed SQL before deploying the matching API version.
+This follows EF Core's [SQL deployment guidance](https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/applying).
+
+Restore the repository-pinned EF CLI (matching EF Core), then export an explicit
+migration range to a new directory. Use `0` only for an empty application schema:
+
+```sh
+dotnet tool restore
+bash scripts/export-db-migration.sh 0 20261028204341_AddAuditEventNavigation artifacts/db-release
+```
+
+The command generates `schema.sql` and copies `app-permissions.sql`; it never
+connects to a database. For subsequent releases, replace `0` with the migration
+currently applied in production and specify the release's exact target ID.
+Archive both reviewed files with the release. Review destructive operations and
+test the pair on a restored production backup, including the recovery plan.
+
+The admin provisions the database and a separate API login. The admin/schema
+owner retains ownership of all application objects; the API login must have no
+administrative attributes, ownership or role memberships that grant schema
+changes. Never use the development bootstrap or shared development role here.
+Using the admin's normal secure connection setup (no credentials in scripts),
+manually run, in order:
+
+```sh
+psql -X --set=ON_ERROR_STOP=1 --file=artifacts/db-release/schema.sql
+psql -X --set=ON_ERROR_STOP=1 --set=api_role=pam_api --file=artifacts/db-release/app-permissions.sql
+```
+
+Run both files as the same schema owner or an authorized DBA. Serialize releases:
+SQL scripts do not acquire EF's runtime migration lock. Stop on any error and
+keep API traffic stopped until both files succeed. Back up first; restore or
+apply a separately reviewed corrective script if a release fails. Do not assume
+an idempotent script makes destructive changes or automatic rollback safe.
+
+The permissions script grants CRUD on application tables, read/append access to
+audit events, and sequence usage. It denies schema/database creation and all
+access to EF migration history, and refuses API ownership or inherited privileges
+that bypass those restrictions. Apply it after **every** schema release, including
+new tables. Configure only this restricted API login in production secrets.
+Development intentionally retains schema ownership and broader audit permissions.
 
 ## C# formatting
 
