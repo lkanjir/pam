@@ -9,7 +9,7 @@ public sealed class AccessRequest
     public int RequestedDurationMinutes { get; init; }
     public string Justification { get; init; } = string.Empty;
     public string? TicketReference { get; init; }
-    public string State { get; private set; } = string.Empty;
+    public string State { get; init; } = string.Empty;
     public string IdempotencyKey { get; init; } = string.Empty;
     public string? PayloadHash { get; init; }
     public DateTime CreatedAt { get; init; }

@@ -1,8 +1,10 @@
 using System.Net;
 using Api;
 using Api.Authentication;
+using Application.Identity;
 using Backend.IntegrationTests.Fixtures;
 using Backend.Tests.Support;
+using Infrastructure.Persistence;
 using Infrastructure.Persistence.Entities;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -36,13 +38,18 @@ internal static class SessionTestHost
         // Replace only the external identity provider's sign-in entry point.
         app.MapGet("/login", async (HttpContext context) =>
         {
-            var ticket = SessionTestData.Ticket(clock.Now, principalId);
+            long id = long.Parse(principalId, System.Globalization.CultureInfo.InvariantCulture);
+            var principal = await context.RequestServices.GetRequiredService<PamDbContext>().Principals
+                .AsNoTracking().SingleAsync(principal => principal.Id == id, context.RequestAborted);
+            var identity = PamClaims.Create(new PrincipalIdentity(
+                principal.Id, principal.PublicId, principal.DisplayName, principal.IsEnabled, []),
+                principal.Issuer, principal.Subject, "idp-session");
             var properties = new AuthenticationProperties
             {
                 IsPersistent = context.Request.Query["persistent"] == "True",
                 RedirectUri = context.Request.Query["redirect"] == "true" ? "/api/me" : null
             };
-            await context.SignInAsync("Cookies", ticket.Principal, properties);
+            await context.SignInAsync("Cookies", identity, properties);
         }).AllowAnonymous();
         await app.StartAsync();
         return app;

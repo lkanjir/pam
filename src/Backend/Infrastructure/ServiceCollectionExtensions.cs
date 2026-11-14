@@ -1,6 +1,8 @@
+using Application.AccessRequests;
 using Application.Identity;
 using Application.Resources;
 using Application.Sessions;
+using Infrastructure.AccessRequests;
 using Infrastructure.Authentication;
 using Infrastructure.Identity;
 using Infrastructure.Persistence;
@@ -81,6 +83,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<SessionTerminator>();
 
         services.AddScoped<IResourceService, ResourceService>();
+        services.AddScoped<IAccessRequestService, AccessRequestService>();
 
         return services;
     }

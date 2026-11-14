@@ -1,3 +1,4 @@
+using Api.AccessRequests;
 using Api.Authentication;
 using Api.Errors;
 using Api.Filters;
@@ -38,6 +39,7 @@ public static class PamApplication
         var api = app.MapGroup("/api").RequireAuthorization().AddEndpointFilter<AntiforgeryFilter>();
         api.MapAuthenticationEndpoints();
         api.MapResourceEndpoints();
+        api.MapAccessRequestEndpoints();
 
         if (app.Environment.IsDevelopment())
         {
