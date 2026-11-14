@@ -9,6 +9,7 @@
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
     <PackageReference Include="FakeItEasy" />
     <ProjectReference Include="../../src/Backend/Api/Api.csproj" />
+    <ProjectReference Include="../../src/Backend/Migrator/Migrator.csproj" />
     <Compile Include="../Shared/*.cs" Link="Support/%(Filename)%(Extension)" />
     <Using Include="Xunit" />
   </ItemGroup>

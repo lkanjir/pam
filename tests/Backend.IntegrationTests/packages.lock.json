@@ -528,6 +528,12 @@
           "StackExchange.Redis": "[3.4.5, )"
         }
       },
+      "migrator": {
+        "type": "Project",
+        "dependencies": {
+          "Infrastructure": "[1.0.0, )"
+        }
+      },
       "AspNetCore.HealthChecks.Redis": {
         "type": "CentralTransitive",
         "requested": "[9.0.0, )",
