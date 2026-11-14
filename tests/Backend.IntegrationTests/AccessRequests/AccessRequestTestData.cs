@@ -15,7 +15,7 @@ internal static class AccessRequestTestData
         long? requesterId = null,
         string state = "PendingApproval")
     {
-        var request = new AccessRequest
+        var request = new AccessRequest(AccessRequestStates.Parse(state))
         {
             PublicId = publicId,
             RequesterPrincipalId = requesterId ?? test.ActorId,
@@ -23,7 +23,6 @@ internal static class AccessRequestTestData
             RequestedDurationMinutes = 30,
             Justification = "Deploy release",
             TicketReference = "INC-1042",
-            State = state,
             IdempotencyKey = publicId.ToString(),
             CreatedAt = test.Clock.Now.UtcDateTime
         };

@@ -1,14 +1,7 @@
 namespace Application.AccessRequests;
 
-public enum AccessRequestOutcome
-{
-    Invalid,
-    Denied,
-    PendingApproval
-}
-
 public sealed record AccessRequestPolicyResult(
-    AccessRequestOutcome Outcome,
+    AccessRequestPolicyDecision? Decision,
     string ReasonCode,
     string Explanation)
 {
@@ -41,7 +34,7 @@ public static class AccessRequestPolicy
         if (errors.Count > 0)
         {
             return new AccessRequestPolicyResult(
-                AccessRequestOutcome.Invalid, "invalid_request", "The request does not satisfy entitlement constraints.")
+                null, "invalid_request", "The request does not satisfy entitlement constraints.")
             {
                 Errors = errors
             };
@@ -49,7 +42,7 @@ public static class AccessRequestPolicy
 
         // Sprint 1 never auto-approves or provisions access, even for an entitlement without an approval flag.
         return isEligible
-            ? new(AccessRequestOutcome.PendingApproval, "approval_required", "The request requires manual approval.")
-            : new(AccessRequestOutcome.Denied, "not_eligible", "The requester is not eligible for this entitlement.");
+            ? new(AccessRequestPolicyDecision.RequireApproval, "approval_required", "The request requires manual approval.")
+            : new(AccessRequestPolicyDecision.Deny, "not_eligible", "The requester is not eligible for this entitlement.");
     }
 }

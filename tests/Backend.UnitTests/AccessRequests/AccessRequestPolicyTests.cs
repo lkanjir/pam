@@ -17,7 +17,7 @@ public sealed class AccessRequestPolicyTests
         var result = AccessRequestPolicy.Evaluate(request, 60, true, true);
 
         // Assert
-        Assert.Equal(AccessRequestOutcome.PendingApproval, result.Outcome);
+        Assert.Equal(AccessRequestPolicyDecision.RequireApproval, result.Decision);
         Assert.Equal("approval_required", result.ReasonCode);
         Assert.Equal("The request requires manual approval.", result.Explanation);
         Assert.Empty(result.Errors);
@@ -33,7 +33,7 @@ public sealed class AccessRequestPolicyTests
         var result = AccessRequestPolicy.Evaluate(request, 60, true, false);
 
         // Assert
-        Assert.Equal(AccessRequestOutcome.Denied, result.Outcome);
+        Assert.Equal(AccessRequestPolicyDecision.Deny, result.Decision);
         Assert.Equal("not_eligible", result.ReasonCode);
         Assert.Equal("The requester is not eligible for this entitlement.", result.Explanation);
         Assert.Empty(result.Errors);
@@ -52,7 +52,7 @@ public sealed class AccessRequestPolicyTests
         var result = AccessRequestPolicy.Evaluate(request, 60, true, true);
 
         // Assert
-        Assert.Equal(AccessRequestOutcome.Invalid, result.Outcome);
+        Assert.Null(result.Decision);
         var error = Assert.Single(result.Errors);
         Assert.Equal(nameof(request.RequestedDurationMinutes), error.Key);
         Assert.Equal("Duration must be positive and within the entitlement maximum.", Assert.Single(error.Value));
@@ -71,7 +71,7 @@ public sealed class AccessRequestPolicyTests
         var result = AccessRequestPolicy.Evaluate(request, 60, true, true);
 
         // Assert
-        Assert.Equal(AccessRequestOutcome.Invalid, result.Outcome);
+        Assert.Null(result.Decision);
         var error = Assert.Single(result.Errors);
         Assert.Equal(nameof(request.TicketReference), error.Key);
         Assert.Equal("A ticket reference is required for this entitlement.", Assert.Single(error.Value));
@@ -87,7 +87,7 @@ public sealed class AccessRequestPolicyTests
         var result = AccessRequestPolicy.Evaluate(request, 60, false, true);
 
         // Assert
-        Assert.Equal(AccessRequestOutcome.PendingApproval, result.Outcome);
+        Assert.Equal(AccessRequestPolicyDecision.RequireApproval, result.Decision);
         Assert.Empty(result.Errors);
     }
 
@@ -101,7 +101,7 @@ public sealed class AccessRequestPolicyTests
         var result = AccessRequestPolicy.Evaluate(request, 60, true, false);
 
         // Assert
-        Assert.Equal(AccessRequestOutcome.Invalid, result.Outcome);
+        Assert.Null(result.Decision);
         Assert.Equal(2, result.Errors.Count);
         Assert.Contains(nameof(request.RequestedDurationMinutes), result.Errors.Keys);
         Assert.Contains(nameof(request.TicketReference), result.Errors.Keys);

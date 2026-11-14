@@ -145,14 +145,15 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
 
         var decision = AccessRequestPolicy.Evaluate(
             normalized, entitlement.MaxDurationMinutes, entitlement.RequiresTicket, entitlement.IsEligible);
-        if (decision.Outcome == AccessRequestOutcome.Invalid)
+        if (decision.Decision is not { } policyDecision)
         {
             return new(AccessRequestSubmissionKind.Invalid) { Errors = decision.Errors };
         }
 
         var now = timeProvider.GetUtcNow();
-        string state = decision.Outcome.ToString();
-        var accessRequest = new AccessRequest
+        var initialState = policyDecision.InitialState();
+        string state = initialState.ToCode();
+        var accessRequest = new AccessRequest(initialState)
         {
             PublicId = Guid.CreateVersion7(now),
             RequesterPrincipalId = requester.Id,
@@ -160,7 +161,6 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
             RequestedDurationMinutes = normalized.RequestedDurationMinutes,
             Justification = normalized.Justification,
             TicketReference = normalized.TicketReference,
-            State = state,
             IdempotencyKey = idempotencyKey,
             PayloadHash = payloadHash,
             CreatedAt = now.UtcDateTime
@@ -177,13 +177,12 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
             ticketPresent = normalized.TicketReference is not null,
             entitlement.IsEligible
         }, JsonOptions);
-        var evaluation = new PolicyEvaluation
+        var evaluation = new PolicyEvaluation(policyDecision)
         {
             PublicId = Guid.CreateVersion7(now),
             Request = accessRequest,
             PolicyCode = AccessRequestPolicy.Code,
             PolicyVersion = AccessRequestPolicy.Version,
-            Decision = state,
             ReasonCode = decision.ReasonCode,
             Explanation = decision.Explanation,
             InputSnapshot = inputSnapshot,
@@ -221,7 +220,7 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
                 accessRequest.PublicId, entitlement.ResourcePublicId, entitlement.PublicId,
                 accessRequest.RequestedDurationMinutes, accessRequest.Justification, accessRequest.TicketReference,
                 state, now, new PolicyEvaluationResponse(
-                    evaluation.PublicId, evaluation.PolicyCode, evaluation.PolicyVersion, state,
+                    evaluation.PublicId, evaluation.PolicyCode, evaluation.PolicyVersion, evaluation.Decision,
                     decision.ReasonCode, decision.Explanation, now))
         };
     }
@@ -240,7 +239,8 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
                 select new PreviousSubmission(request.PayloadHash, new AccessRequestResponse(
                     request.PublicId, resource.PublicId, entitlement.PublicId,
                     request.RequestedDurationMinutes, request.Justification, request.TicketReference,
-                    request.State, new DateTimeOffset(request.CreatedAt, TimeSpan.Zero),
+                    AccessRequestPolicyDecisions.Parse(evaluation.Decision).InitialState().ToCode(),
+                    new DateTimeOffset(request.CreatedAt, TimeSpan.Zero),
                     new PolicyEvaluationResponse(
                         evaluation.PublicId, evaluation.PolicyCode, evaluation.PolicyVersion,
                         evaluation.Decision, evaluation.ReasonCode ?? string.Empty,
@@ -291,7 +291,7 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
             CorrelationId = correlationId,
             CausationId = causationId,
             Source = "pam.api",
-            Outcome = decision.Outcome == AccessRequestOutcome.Denied ? "denied" : "success",
+            Outcome = decision.Decision == AccessRequestPolicyDecision.Deny ? "denied" : "success",
             ReasonCode = decision.ReasonCode,
             Metadata = metadata
         };
