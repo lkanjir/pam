@@ -259,6 +259,12 @@ values, Denied/PendingApproval persistence, versioned policy evidence and linked
 audit snapshots. OpenAPI checks describe the required idempotency header,
 success/error status codes and public response schema; no `.http` files are used.
 
+`AccessRequestIdempotencyTests` covers normalization, changed-payload conflicts,
+independent requester keys, concurrent identical/conflicting submissions and
+replays after resource retirement or eligibility changes. Test middleware gates
+both concurrent HTTP requests before submission without sleeps. A retry after
+failure can reuse the key.
+
 `AccessRequestAtomicityTests` uses check constraints to force failures at request,
 policy and either audit insert, proving transaction rollback.
 
@@ -266,6 +272,12 @@ The local `/login` test substitute now creates claims from the seeded principal'
 actual public identity through `PamClaims`, supporting realistic requester audit
 snapshots and multiple principals. The external identity provider remains
 substituted. Own-request GET endpoints are still separate work.
+
+Verification on 2026-11-14: the focused runs passed **12 policy unit tests and
+56 submission integration cases**. `bash scripts/check.sh` passed the complete
+gate with a warning-free Release build, **74 unit tests and 211 integration
+tests**, with zero failures or skips. The EF model check confirms that the new
+request navigations reuse existing foreign keys without a schema migration.
 
 ## Audit payload contract
 

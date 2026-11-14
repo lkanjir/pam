@@ -65,6 +65,7 @@ public sealed class AccessRequestSubmissionTests(PostgresFixture postgres, Redis
         Assert.Equal("INC-1042", saved.TicketReference);
         Assert.Equal("PendingApproval", saved.State);
         Assert.Equal("submission-1", saved.IdempotencyKey);
+        Assert.Equal(64, saved.PayloadHash?.Length);
         Assert.Equal(test.Clock.Now.UtcDateTime, saved.CreatedAt);
         var evaluation = await test.Database.Context.PolicyEvaluations.AsNoTracking().SingleAsync();
         Assert.Equal(result.PolicyEvaluation.Id, evaluation.PublicId);
@@ -469,7 +470,7 @@ public sealed class AccessRequestSubmissionTests(PostgresFixture postgres, Redis
         Assert.Equal("header", key.GetProperty("in").GetString());
         Assert.True(key.GetProperty("required").GetBoolean());
         Assert.Equal(128, key.GetProperty("schema").GetProperty("maxLength").GetInt32());
-        foreach (string status in new[] { "201", "400", "401", "403", "500" })
+        foreach (string status in new[] { "200", "201", "400", "401", "403", "409", "500" })
         {
             Assert.Contains(status, operation.GetProperty("responses").EnumerateObject().Select(item => item.Name));
         }
