@@ -12,6 +12,34 @@ namespace Backend.IntegrationTests.AccessRequests;
 public sealed class FingerprintCompatibilityTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Fact]
+    public async Task Submit_RequestLifecycleChanged_ReplaysOriginalSubmissionDecision()
+    {
+        // Arrange
+        await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection);
+        await test.AuthenticateAsync();
+        var entitlement = await SeedEntitlementAsync(test);
+        var request = Request(test, entitlement);
+        using var created = await PostAsync(test, request);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var original = await created.Content.ReadFromJsonAsync<AccessRequestResponse>();
+        Assert.NotNull(original);
+        var stored = await test.Database.Context.AccessRequests.SingleAsync();
+        stored.TransitionTo(AccessRequestState.Approved);
+        await test.Database.Context.SaveChangesAsync();
+
+        // Act
+        using var replay = await PostAsync(test, request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        Assert.Equal(original, await replay.Content.ReadFromJsonAsync<AccessRequestResponse>());
+        var detail = await test.Client.GetFromJsonAsync<AccessRequestDetailsResponse>($"/api/access-requests/{original.Id}");
+        Assert.NotNull(detail);
+        Assert.Equal("Approved", detail.State);
+        Assert.Equal("PendingApproval", detail.PolicyEvaluation.Decision);
+    }
+
+    [Fact]
     public async Task Submit_LegacyUnversionedFingerprint_ReplaysWithoutNewRecords()
     {
         // Arrange
