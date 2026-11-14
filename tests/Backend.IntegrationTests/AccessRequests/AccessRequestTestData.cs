@@ -8,6 +8,29 @@ namespace Backend.IntegrationTests.AccessRequests;
 
 internal static class AccessRequestTestData
 {
+    public static AccessRequest AddRequest(
+        ResourceTestContext test,
+        Entitlement entitlement,
+        Guid publicId,
+        long? requesterId = null,
+        string state = "PendingApproval")
+    {
+        var request = new AccessRequest
+        {
+            PublicId = publicId,
+            RequesterPrincipalId = requesterId ?? test.ActorId,
+            Entitlement = entitlement,
+            RequestedDurationMinutes = 30,
+            Justification = "Deploy release",
+            TicketReference = "INC-1042",
+            State = state,
+            IdempotencyKey = publicId.ToString(),
+            CreatedAt = test.Clock.Now.UtcDateTime
+        };
+        test.Database.Context.AccessRequests.Add(request);
+        return request;
+    }
+
     public static async Task<Entitlement> SeedEntitlementAsync(
         ResourceTestContext test,
         bool? eligibility = true,
