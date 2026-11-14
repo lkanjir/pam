@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text.Json;
 using Application.AccessRequests;
 using Application.Common.Pagination;
@@ -98,8 +97,7 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
             Justification = request.Justification.Trim(),
             TicketReference = string.IsNullOrWhiteSpace(request.TicketReference) ? null : request.TicketReference.Trim()
         };
-        string payloadHash = Convert.ToHexString(SHA256.HashData(
-            JsonSerializer.SerializeToUtf8Bytes(normalized, JsonOptions)));
+        string payloadHash = AccessRequestFingerprint.CreateV1(normalized);
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
@@ -119,7 +117,7 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
         var previous = await FindPreviousAsync(requester.Id, idempotencyKey, cancellationToken);
         if (previous is not null)
         {
-            return previous.PayloadHash == payloadHash
+            return AccessRequestFingerprint.IsMatch(previous.PayloadHash, payloadHash)
                 ? new(AccessRequestSubmissionKind.Replayed) { Request = previous.Response }
                 : new(AccessRequestSubmissionKind.Conflict);
         }

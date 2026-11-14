@@ -65,7 +65,7 @@ public sealed class AccessRequestSubmissionTests(PostgresFixture postgres, Redis
         Assert.Equal("INC-1042", saved.TicketReference);
         Assert.Equal("PendingApproval", saved.State);
         Assert.Equal("submission-1", saved.IdempotencyKey);
-        Assert.Equal(64, saved.PayloadHash?.Length);
+        Assert.Equal(67, saved.PayloadHash?.Length);
         Assert.Equal(test.Clock.Now.UtcDateTime, saved.CreatedAt);
         var evaluation = await test.Database.Context.PolicyEvaluations.AsNoTracking().SingleAsync();
         Assert.Equal(result.PolicyEvaluation.Id, evaluation.PublicId);
