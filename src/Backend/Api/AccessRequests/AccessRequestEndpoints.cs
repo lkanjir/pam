@@ -22,6 +22,15 @@ public static class AccessRequestEndpoints
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
+        requests.MapGet("/{requestId:guid}", GetMine)
+            .WithName("AccessRequest.GetById")
+            .WithSummary("Get an access request owned by the authenticated caller")
+            .WithDescription("Returns the saved request and policy evaluation, current resource and entitlement "
+                + "labels, and up to two initial submission audit summaries. Retired resources remain visible. "
+                + "Policy is not reevaluated. Missing requests and requests owned by another user both return 404.")
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
         requests.MapPost("", Submit)
             .WithName("AccessRequest.Create")
             .WithSummary("Submit an access request and evaluate Sprint 1 eligibility")
@@ -54,6 +63,21 @@ public static class AccessRequestEndpoints
 
         var page = await service.ListMineAsync(identity.Id, query.Limit, query.Cursor, cancellationToken);
         return TypedResults.Ok(page);
+    }
+
+    private static async Task<Results<Ok<AccessRequestDetailsResponse>, NotFound, UnauthorizedHttpResult>> GetMine(
+        Guid requestId,
+        HttpContext context,
+        IAccessRequestService service,
+        CancellationToken cancellationToken)
+    {
+        if (!PamClaims.TryRead(context.User, out var identity))
+        {
+            return TypedResults.Unauthorized();
+        }
+
+        var request = await service.GetMineAsync(requestId, identity.Id, cancellationToken);
+        return request is null ? TypedResults.NotFound() : TypedResults.Ok(request);
     }
 
     private static async Task<Results<Created<AccessRequestResponse>, Ok<AccessRequestResponse>,

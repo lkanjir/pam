@@ -46,6 +46,46 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
         return new CursorPage<AccessRequestSummaryResponse>(items, nextCursor);
     }
 
+    public async Task<AccessRequestDetailsResponse?> GetMineAsync(
+        Guid publicId,
+        long principalId,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await (from request in dbContext.AccessRequests.IgnoreQueryFilters()
+                              join entitlement in dbContext.Entitlements on request.EntitlementId equals entitlement.Id
+                              join resource in dbContext.ManagedResources on entitlement.ResourceId equals resource.Id
+                              join evaluation in dbContext.PolicyEvaluations on request.Id equals evaluation.RequestId
+                              where request.PublicId == publicId && request.RequesterPrincipalId == principalId
+                              select new AccessRequestDetailsResponse(
+                                  request.PublicId, resource.PublicId, resource.Name, entitlement.PublicId, entitlement.Name,
+                                  request.RequestedDurationMinutes, request.Justification, request.TicketReference,
+                                  request.State, new DateTimeOffset(request.CreatedAt, TimeSpan.Zero),
+                                  new PolicyEvaluationResponse(
+                                      evaluation.PublicId, evaluation.PolicyCode, evaluation.PolicyVersion,
+                                      evaluation.Decision, evaluation.ReasonCode ?? string.Empty,
+                                      evaluation.Explanation ?? string.Empty,
+                                      new DateTimeOffset(evaluation.EvaluatedAt, TimeSpan.Zero)),
+                                  Array.Empty<AccessRequestAuditEventResponse>()))
+            .SingleOrDefaultAsync(cancellationToken);
+        if (response is null)
+        {
+            return null;
+        }
+
+        var events = await (from audit in dbContext.AuditEvents
+                            join request in dbContext.AccessRequests on audit.RequestId equals request.Id
+                            where request.PublicId == publicId && request.RequesterPrincipalId == principalId
+                                && (audit.EventType == "access_request.created" || audit.EventType == "policy.evaluated")
+                            orderby audit.OccurredAt, audit.Id
+                            select new AccessRequestAuditEventResponse(
+                                audit.PublicId, audit.EventType, new DateTimeOffset(audit.OccurredAt, TimeSpan.Zero),
+                                audit.Outcome, audit.ReasonCode))
+            .Take(2)
+            .ToListAsync(cancellationToken);
+
+        return response with { AuditEvents = events };
+    }
+
     public async Task<AccessRequestSubmissionResult> SubmitAsync(
         CreateAccessRequestRequest request,
         string idempotencyKey,

@@ -20,6 +20,11 @@ public sealed record AccessRequestSubmissionResult(AccessRequestSubmissionKind K
 
 public interface IAccessRequestService
 {
+    Task<AccessRequestDetailsResponse?> GetMineAsync(
+        Guid publicId,
+        long principalId,
+        CancellationToken cancellationToken = default);
+
     Task<CursorPage<AccessRequestSummaryResponse>> ListMineAsync(
         long principalId,
         int limit,
