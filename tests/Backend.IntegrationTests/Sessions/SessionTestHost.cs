@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
@@ -21,7 +20,7 @@ using StackExchange.Redis;
 namespace Backend.IntegrationTests.Sessions;
 
 [CollectionDefinition("Cookie sessions")]
-public sealed class CookieSessionCollection : ICollectionFixture<PostgresFixture>, ICollectionFixture<RedisFixture>;
+public sealed class CookieSessionTestGroup : ICollectionFixture<PostgresFixture>, ICollectionFixture<RedisFixture>;
 
 internal static class SessionTestHost
 {
@@ -87,19 +86,31 @@ internal static class SessionTestHost
     public static void UpdateCookie(HttpClient client, HttpResponseMessage response)
     {
         if (!response.Headers.TryGetValues("Set-Cookie", out var cookies))
+        {
             return;
+        }
         // Standard sign-out followed by sign-in emits deletion and replacement.
         // Apply them in response order, as a browser does.
         var jar = new CookieContainer();
         if (client.DefaultRequestHeaders.TryGetValues("Cookie", out var existing))
+        {
             foreach (var cookie in existing.SelectMany(header => header.Split(';')))
+            {
                 jar.SetCookies(client.BaseAddress!, cookie.Trim());
+            }
+        }
+
         foreach (var cookie in cookies)
+        {
             jar.SetCookies(client.BaseAddress!, cookie);
+        }
+
         client.DefaultRequestHeaders.Remove("Cookie");
         var header = jar.GetCookieHeader(client.BaseAddress!);
         if (header.Length > 0)
+        {
             client.DefaultRequestHeaders.Add("Cookie", header);
+        }
     }
 
     public static Task RejectLogoutAuditAsync(TestDatabase database) =>
@@ -112,7 +123,8 @@ internal static class SessionTestHost
         var context = CreateContext(scope.ServiceProvider);
         var ticket = SessionTestData.Ticket(clock.GetUtcNow(), principalId);
         await context.SignInAsync("Cookies", ticket.Principal, ticket.Properties);
-        return context.Response.Headers.SetCookie.Single(value => value!.StartsWith("pam.session="))!.Split(';')[0];
+        return context.Response.Headers.SetCookie
+            .Single(value => value!.StartsWith("pam.session=", StringComparison.Ordinal))!.Split(';')[0];
     }
 
     public static DefaultHttpContext CreateLogoutContext(IServiceProvider services, string cookie)

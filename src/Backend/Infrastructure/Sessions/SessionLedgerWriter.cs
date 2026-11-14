@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Application.Sessions;
-using Infrastructure.Persistence.Entities;
 using Infrastructure.Persistence;
+using Infrastructure.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Sessions;

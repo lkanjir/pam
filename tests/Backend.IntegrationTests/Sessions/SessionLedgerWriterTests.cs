@@ -1,7 +1,7 @@
 using Application.Sessions;
 using Backend.IntegrationTests.Fixtures;
-using Infrastructure.Persistence.Entities;
 using Infrastructure.Persistence;
+using Infrastructure.Persistence.Entities;
 using Infrastructure.Sessions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -10,6 +10,8 @@ namespace Backend.IntegrationTests.Sessions;
 
 public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassFixture<PostgresFixture>
 {
+    private static readonly string[] SnapshotPropertyNames = ["displayName", "id", "issuer", "publicId", "subject"];
+
     [Fact]
     public async Task RecordStartedAsync_PersistsSessionLedger()
     {
@@ -55,7 +57,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         {
             using var snapshot = System.Text.Json.JsonDocument.Parse(json!);
             var root = snapshot.RootElement;
-            Assert.Equal(new[] { "displayName", "id", "issuer", "publicId", "subject" },
+            Assert.Equal(SnapshotPropertyNames,
                 root.EnumerateObject().Select(property => property.Name).Order().ToArray());
             Assert.Equal(session.Principal.Id, root.GetProperty("id").GetInt64());
             Assert.Equal(session.Principal.PublicId.ToString(), root.GetProperty("publicId").GetString());

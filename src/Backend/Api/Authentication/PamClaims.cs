@@ -21,7 +21,10 @@ public static class PamClaims
         };
         claims.AddRange(principal.Roles.Select(role => new Claim(PamClaimTypes.Role, role)));
         if (!string.IsNullOrWhiteSpace(idpSessionId))
+        {
             claims.Add(new Claim(PamClaimTypes.IdpSessionId, idpSessionId));
+        }
+
         return new ClaimsPrincipal(new ClaimsIdentity(claims,
             CookieAuthenticationDefaults.AuthenticationScheme, PamClaimTypes.DisplayName, PamClaimTypes.Role));
     }
@@ -36,7 +39,9 @@ public static class PamClaims
                 NumberStyles.None, CultureInfo.InvariantCulture, out var id) || id <= 0
             || !Guid.TryParse(principal.FindFirst(PamClaimTypes.PublicId)?.Value, out var publicId)
             || string.IsNullOrWhiteSpace(issuer) || string.IsNullOrWhiteSpace(subject) || name is null)
+        {
             return false;
+        }
 
         identity = new PamUserIdentity(id, publicId, name, issuer, subject,
             principal.FindAll(PamClaimTypes.Role).Select(claim => claim.Value).ToArray(),

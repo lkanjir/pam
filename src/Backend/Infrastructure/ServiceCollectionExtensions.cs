@@ -1,7 +1,7 @@
 using Application.Identity;
 using Application.Resources;
-using Infrastructure.Authentication;
 using Application.Sessions;
+using Infrastructure.Authentication;
 using Infrastructure.Identity;
 using Infrastructure.Persistence;
 using Infrastructure.Resources;

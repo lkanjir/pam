@@ -15,7 +15,9 @@ public sealed class PamCookieEvents(IPrincipalIdentityReader principalReader) : 
                 context.HttpContext.RequestAborted);
             if (current is { IsEnabled: true } && current.Id == identity.Id
                 && current.Roles.ToHashSet(StringComparer.Ordinal).SetEquals(identity.Roles))
+            {
                 return;
+            }
         }
 
         // Revoke before returning: a pending sliding renewal must not restore access.

@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/dotnet/skills",
+  "revision": "2877c712edc20643b72f64e2983b168e6661d607",
+  "skills": [
+    {
+      "name": "csharp-expert",
+      "path": "plugins/dotnet/skills/csharp-expert",
+      "files": {
+        "SKILL.md": "9ed04dc09f4eb894879cd568b0661d17da379c944e841d636eff48119a262ce9",
+        "references/dotnet-skills-marketplace.md": "e41fa64545d59b6c51fe91edcd2f5bbe20fc0e5d92edba79c792fac8540aad19"
+      }
+    },
+    {
+      "name": "csharp-refactoring",
+      "path": "plugins/dotnet/skills/csharp-refactoring",
+      "files": {
+        "SKILL.md": "4d7ef3b0abc08f44940565ddc336041fbde95b116c1894ba93abd455a332488c",
+        "references/operation-catalog.md": "94311ac23ea1098c130942084ceb07969f73790d59072c90b87967cbdc3b8dfa"
+      }
+    },
+    {
+      "name": "dotnet-webapi",
+      "path": "plugins/dotnet-aspnetcore/skills/dotnet-webapi",
+      "files": {
+        "SKILL.md": "70e10d74aa367ee63060b64edc397c5998c03da0fbdaf120f5aa8c94d373b77d"
+      }
+    },
+    {
+      "name": "optimizing-ef-core-queries",
+      "path": "plugins/dotnet-data/skills/optimizing-ef-core-queries",
+      "files": {
+        "SKILL.md": "a4c0d87d624f3ac1e291db0e613026815ee3247f5414ece17fd3b45600943ff7"
+      }
+    },
+    {
+      "name": "code-testing",
+      "path": "plugins/dotnet-test/skills/code-testing",
+      "files": {
+        "SKILL.md": "1a6adfcfe2d3be48c7ad2a72b1d1bd09991cfe5f5273708e58c88e84865fb332",
+        "unit-test-generation.prompt.md": "9d5fe6443d540846945061916e35a4d78212f491251cbb80f75432ce300c7adc"
+      }
+    },
+    {
+      "name": "assertion-quality",
+      "path": "plugins/dotnet-test/skills/assertion-quality",
+      "files": {
+        "SKILL.md": "6c6cc5d4646a8b1eeaae7bf3db18ea5418fce35e48cc4f84a9493d3890a5a107"
+      }
+    },
+    {
+      "name": "test-anti-patterns",
+      "path": "plugins/dotnet-test/skills/test-anti-patterns",
+      "files": {
+        "SKILL.md": "01cf87008db2f6ffe17f397856d9ccb5080bbc869e4089baab9acee2e5b0027c"
+      }
+    },
+    {
+      "name": "test-gap-analysis",
+      "path": "plugins/dotnet-test/skills/test-gap-analysis",
+      "files": {
+        "SKILL.md": "1214a29071033d4b3da9f24062dcb517b88f7b1f7265a330f72521d92773495a",
+        "references/mutation-catalog.md": "38db5656c50813868692c9fff592e6c8cb928b3bfd574dab00674394d9a0e7ca",
+        "references/per-test-read-only.md": "ce9582d6dccc52847c51f717818f049a831e6eed4e9cda6b1931f3bc21421bea"
+      }
+    },
+    {
+      "name": "run-tests",
+      "path": "plugins/dotnet-test/skills/run-tests",
+      "files": {
+        "SKILL.md": "7b9698bb5c1f172ca35695dc3b614957c2cb8badf7b230a4b8118d173650fe2b"
+      }
+    },
+    {
+      "name": "platform-detection",
+      "path": "plugins/dotnet-test/skills/platform-detection",
+      "files": {
+        "SKILL.md": "c824bf8f8cbf1233b8b0dbc6e38fae6ac2486c42a6a1f6553a6335daa6838c1a",
+        "references/command-mode.md": "08e276dcafe6bd5bfbaab435065ca24a5800a4eae3ffd7fc15daa1e81354bbc4"
+      }
+    },
+    {
+      "name": "filter-syntax",
+      "path": "plugins/dotnet-test/skills/filter-syntax",
+      "files": {
+        "SKILL.md": "64c294d0fc2d0c4d5887d391c6684429fc4d7a66b6b9f99a475e6abe390c5d19"
+      }
+    },
+    {
+      "name": "dotnet-breaking-changes",
+      "path": "plugins/dotnet/skills/dotnet-breaking-changes",
+      "files": {
+        "SKILL.md": "2dccf8ab440b6208557f0391bae7ac30cb5db9fcdd9c966e49541965eccdd2da",
+        "references/internals-visible-to.md": "ba039289233134c05aa1b5cc86c73dd8cf54e9281a7197b1a77cc493dda75652",
+        "references/multi-targeting.md": "d5b60d425020ce75d1cc9fc8c3138694016670eff6e0f5c5bc0ece683bb5e3d0",
+        "references/public-api.md": "38e9ba24036b69b9b19c7c50cf4a14723cd8f0968a8204a6a0a9b808693915a6",
+        "references/source-generation.md": "90cb491f2fa04d44a81f2a4f19305f602f4f1a3cb0a9cb27c72622e70944c0f5"
+      }
+    },
+    {
+      "name": "msbuild",
+      "path": "plugins/dotnet/skills/msbuild",
+      "files": {
+        "SKILL.md": "21a2d7feed0edbe5e1e2c9be7938f0f77f4b779a8526c0c362c9100ef8a97fe2",
+        "references/antipatterns/additional-antipatterns.md": "e86a52ded9a846f702def7a92003460ebb1b78a769b1da720b1947abbc524057",
+        "references/antipatterns/incremental-build-inputs-outputs.md": "361f23ef4cd84da9f8bf875151b2b1df27e0a2ab3354b8b6728d88b94db131ad",
+        "references/antipatterns/private-assets.md": "76ff2c88d729494b21fe3f12078b10e10ffcbc41857161defeb79487b97d829c",
+        "references/binlog-failure-analysis.md": "11b3962a232ef18ac184be8a52c86de8b35f05e10a3bfc7d5f5b3396f707e5ca",
+        "references/binlog-generation.md": "f6fc3dfbcb895b3cf5cc4c98dcacd76c3eaaab9d3b1a6e714a3bd596557df512",
+        "references/build-perf-baseline.md": "7e45dbf46d1912bde691c2ff2e184d0ce7f1521c30f21658a730cee815ec52fb",
+        "references/build-perf-diagnostics.md": "c715b1dfa297f898b45e893937e40d96e02f6f44c9c3f508dc4442c6dc7cc2f8",
+        "references/copy-to-output-directory.md": "01409f41fd8df30189d544d82dd20556690e5b2c0f16993625f1492d7bff09b2",
+        "references/eval-performance.md": "8a4eeb553ab4e43c9b2b19252fee41bd7a275fca4a8536920e99f9826cb00bdd",
+        "references/extension-points.md": "d7f6f7068366f893eecaf43a02f6d7a4fe8e2dd4933140f789560d81c58b40a5",
+        "references/incremental-build.md": "d5a177edfd5010837c799ec15d98930b43d28dd41b5095337a447bdef8236818",
+        "references/msbuild-antipatterns.md": "841b9a256840ebfd822401c32ac53efdfb4e3ad5d7790863f8031a8da237924e"
+      }
+    },
+    {
+      "name": "code-testing-extensions",
+      "path": "plugins/dotnet-test/skills/code-testing-extensions",
+      "files": {
+        "SKILL.md": "81149d3622f5e358e45d17e2e566077b12c92db311f696d130ea6fc32d95cfc0",
+        "extensions/cpp-examples.md": "273ad0def01eb1a34e5a8f6f4ac7a6d7d4e3fa9bedf7b4d17425c89ff1e3fe5d",
+        "extensions/cpp.md": "9a2d89347ab8c5a02a32ae2feb60d7e9cf0094f7417d129f676c8e0933090f2a",
+        "extensions/dotnet-examples.md": "8316cc012852868b6dd99c6fd3384893919cd9359e4cff04941f0bec381be820",
+        "extensions/dotnet.md": "6535fb7b568a5e1d229ec73c405392faf078b0b22c8306a6e142327bbba6905a",
+        "extensions/go-examples.md": "e3f2ba1c40c0f1bde5cb62aec46aaad6674de0fc9813038f7845d1512658bf71",
+        "extensions/go.md": "4024cdf22cc092cb120406a74c49e58ab5af4802fa446e12416f399df7a94807",
+        "extensions/java-examples.md": "c6b0f5662b6a1c1526fd1315d77ab07539e688abeb64e6ccce747ff8b70ae492",
+        "extensions/java.md": "25b32c779b49e17dff4cbb44fa3003cd33edba27592a9f1d0ab28c135eb04125",
+        "extensions/kotlin-examples.md": "7edadb6affff115d9bcb50271ec8f75a52c6b3a406d0ccc6e1671f0aa3454ef5",
+        "extensions/kotlin.md": "7553070dbf0254c1bb91c293ae8ce4313a68450cf1a451975d9f92d5367eb906",
+        "extensions/powershell-examples.md": "664d878564d384d578e70a11faebff324d255fb28a6fd2508e72ca36a738c797",
+        "extensions/powershell.md": "f34c954bf4b5816347767370011abd8c9b1dacf1c614f1d159437f02456d9dc9",
+        "extensions/python-examples.md": "d142728fb8fcd5e0977e317cf52b14bbaa2efb403d8a3dd341470b1fa2f5f238",
+        "extensions/python.md": "613cd80d37dadd5237e39eb860aacb0617ad68a75f28a802b835cae63c64c381",
+        "extensions/ruby-examples.md": "0320df5702892f3057d33f56e384a9b992f104438a32c7141ef61b5a5db544cf",
+        "extensions/ruby.md": "a74f82cef7a4fb9cbc147c79ace44f61fd7fc0f4325ad9ebd1f4db421015b82d",
+        "extensions/rust-examples.md": "b4933f329331113cdf0903f9599dd0f281caa20f9a3bd6b762b43f16cf35cd76",
+        "extensions/rust.md": "6228a43826eb47112bee333ba34ebbb692770907da235af20296d8938e96ceea",
+        "extensions/swift.md": "6765fb1f54ffbe34ecd25099ea5c735bae1c2f8f93bb7ac21d3b1fa0821d2adb",
+        "extensions/typescript-examples.md": "0f95defcae997f2e15d71f379e08e043987f5fb9892a82669505bfdfd3767b16",
+        "extensions/typescript.md": "c6662430a1e0f04658d210f0031bd7fcc4de362bb64660a924d4fa5842012dbb"
+      }
+    },
+    {
+      "name": "test-analysis-extensions",
+      "path": "plugins/dotnet-test/skills/test-analysis-extensions",
+      "files": {
+        "SKILL.md": "2e442c224b78c5b07097fde53bf055060d2d703d4d90418e0e8a07af8cbda673",
+        "extensions/cpp.md": "da2de0bb820edaf523731bf36381d2a7e71009561072204773be548e43911d50",
+        "extensions/dotnet.md": "ef257a931a25501697fde8a36e027ba9195ff624ff701dd5fd276d746c0d25be",
+        "extensions/go.md": "a885da2e49efbedfe30307c196ec71876433571ce3e5c781e6741ee9a77ab8c3",
+        "extensions/java.md": "05f3bd254cad71e2b4ac36a3483e2a8fef41dba0ac6a983925754b60bc50758b",
+        "extensions/kotlin.md": "ef1176cc48c807bfb6e57329df6ee093f6e2475cd629980ffc477d85d879605c",
+        "extensions/powershell.md": "2dbbac3f475b7f7f4f817597379789af228e034d4c179460403757af26240f9b",
+        "extensions/python.md": "e532c6eb1d362e8c0a14b90cb906a84449f0a03330ff432a72d484c79ece0e5d",
+        "extensions/ruby.md": "422044981b8672c26f6c47ac9f828aa25f03eac5cc0c9a2354843a6980a297bc",
+        "extensions/rust.md": "d92041fc8142311070e9c02a5590ac9d10eef0baa4aa9136e163e2c526871725",
+        "extensions/swift.md": "41f4b7c9b8827de0737778ca24de5de26ccd1a3f5ff58d6f58a135fc576c4c52",
+        "extensions/typescript.md": "7dd98060c3941ec791f1128ef67d77cad2733ee8381e39f14ccdc19ad48f90ef"
+      }
+    }
+  ]
+}

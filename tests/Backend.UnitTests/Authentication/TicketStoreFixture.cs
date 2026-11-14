@@ -1,13 +1,13 @@
 using Api.Authentication;
 using Api.Configuration;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.Extensions.Options;
 using Application.Sessions;
 using Backend.Tests.Support;
 using FakeItEasy;
 using Infrastructure.Authentication;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Backend.UnitTests.Authentication;
 

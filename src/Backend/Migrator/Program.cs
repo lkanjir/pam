@@ -47,6 +47,9 @@ catch (Exception exception)
     // Avoid logging credentials, connection strings or SQL parameter values.
     Console.Error.WriteLine($"Migration failed ({exception.GetType().Name}). API startup is blocked.");
     if (exception is PostgresException postgresException)
+    {
         Console.Error.WriteLine($"PostgreSQL SQLSTATE: {postgresException.SqlState}");
+    }
+
     return 1;
 }

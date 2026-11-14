@@ -178,6 +178,57 @@ Moving the entity namespace does not change the database schema. The current EF
 model snapshot uses the new namespace; historical migration target models retain
 the original names. Integration tests apply the existing migrations to PostgreSQL.
 
+Core resource, entitlement, eligibility, access-request and role relationships have
+explicit navigation mappings alongside their existing FK properties. Navigation
+declarations do not enable lazy loading or automatic includes. Required references
+use `null!` for materialization; this does not mean the related entity was loaded.
+
+`EntityRelationshipsTests` checks graph inserts with generated keys, distinct role
+assignees/assigners, one-command navigation projections without tracked entities,
+tracked resource updates and history after resource soft deletion. The PostgreSQL
+fixture accepts command interceptors for measuring the actual query count.
+`EntityModelTests` compares the relational model with the last migration, guarding
+against accidental extra FK columns or other schema changes during this refactor.
+
+The required `Entitlement.Resource` relationship points to a filtered entity. EF
+warns about that combination: projecting or including the required resource can
+hide an entitlement when the resource is soft-deleted. Historical queries that
+need that resource use `IgnoreQueryFilters()` explicitly. No filter is propagated
+to requests, entitlements or audit history. Audit snapshots remain the historical
+source of truth; loading a current entity is optional and does not replace them.
+
+## Resource CRUD
+
+Resource endpoint tests use the production HTTP pipeline with real cookie sessions,
+antiforgery validation, PostgreSQL and Redis. A local test sign-in replaces the
+external identity provider, using the same infrastructure as the cookie tests.
+The actor has no special role and edits a target created by a different principal,
+matching the temporary policy that every authenticated user can manage all targets.
+
+PUT fully replaces editable fields and requires `IsActive` explicitly. An omitted
+description clears the previous value. Tests cover trimming, validation boundaries,
+missing required fields, malformed JSON, authentication/CSRF rejection, unavailable
+targets, actor/timestamp stamping and the audit snapshot. The 24 PUT cases passed
+before DELETE was implemented.
+
+DELETE sets `DeletedAt` and `ModifiedAt` to the same operation timestamp,
+`IsActive=false` and `ModifiedByPrincipalId` to the caller. Tests cover active and
+inactive targets, retained entitlements, audit snapshots, authentication/CSRF,
+missing targets and repeated deletion. A repeat returns 404 without a new audit.
+Deleted targets disappear from GET/list and cannot be restored through PUT.
+
+Resource changes and their `resource.created`, `resource.updated` or
+`resource.deleted` audit use one `SaveChangesAsync`. Check-constraint failures on
+the audit table verify rollback of creation, update and soft deletion. Snapshots
+include resource identity, editable fields, creation/modification actors and
+timestamps, and the deletion timestamp. Earlier snapshot fields retain their names.
+
+Read/create regressions exercise Location resolution, explicit/default active state,
+cursor pagination without overlap, a cursor whose last resource was deleted,
+invalid cursors/limits and authentication. These are HTTP/storage tests; unit tests
+do not mock EF query behavior. Concurrent writes currently use EF's default
+last-writer-wins behavior; ETags/version preconditions are not implemented.
+
 ## Audit payload contract
 
 `SessionStarted` groups `PrincipalSnapshot` and `SessionRequestMetadata` separately
@@ -219,3 +270,15 @@ logout-to-PostgreSQL audit path.
 Detailed request logging, response-ID headers and tracing remain deferred as recorded
 in the local project documentation. No production request-logging pipeline is implied
 by these tests.
+
+## Verification checkpoint — 2026-10-29
+
+After the EF navigation refactor, `dotnet test src/Backend/Backend.sln --no-build
+--no-restore -m:1` passed **62 unit tests and 84 integration tests**. The seven new
+tests cover the schema comparison and the persistence/navigation behaviors described
+above. No schema migration is required for these navigation and setter changes.
+
+After PUT, DELETE and resource CRUD regressions, the same full-suite command passed
+**62 unit tests and 134 integration tests**. The 50 new resource cases use real HTTP,
+cookies/antiforgery, PostgreSQL and Redis. PUT's 24 cases also passed separately
+before DELETE implementation. Build completed with no warnings or errors.
