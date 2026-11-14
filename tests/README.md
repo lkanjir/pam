@@ -246,6 +246,27 @@ focused run. `bash scripts/check.sh` then passed locked restore, formatting,
 analyzers, Release build (zero warnings/errors), **62 unit tests and 155
 integration tests**, with no failures or skips.
 
+## Access-request submission
+
+`AccessRequestPolicyTests` checks duration boundaries, required/optional tickets,
+eligibility outcomes and validation before policy denial. Sprint 1 always queues
+eligible requests for manual approval.
+
+`AccessRequestSubmissionTests` uses production HTTP handlers, real PAM sessions,
+antiforgery, PostgreSQL and Redis. It covers request validation, normalized text,
+active resource/entitlement consistency, session-derived identity and server
+values, Denied/PendingApproval persistence, versioned policy evidence and linked
+audit snapshots. OpenAPI checks describe the required idempotency header,
+success/error status codes and public response schema; no `.http` files are used.
+
+`AccessRequestAtomicityTests` uses check constraints to force failures at request,
+policy and either audit insert, proving transaction rollback.
+
+The local `/login` test substitute now creates claims from the seeded principal's
+actual public identity through `PamClaims`, supporting realistic requester audit
+snapshots and multiple principals. The external identity provider remains
+substituted. Own-request GET endpoints are still separate work.
+
 ## Audit payload contract
 
 `SessionStarted` groups `PrincipalSnapshot` and `SessionRequestMetadata` separately
