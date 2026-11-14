@@ -29,8 +29,14 @@ Run PostgreSQL, Redis, Keycloak and Vault independently of the API debugger:
 docker compose --env-file deploy/.env -f deploy/compose.dev.yml up -d --wait
 ```
 
-Development Compose contains dependencies only. Run the local development
-migrator before starting the API:
+Development Compose contains dependencies only. Open `src/Backend/Backend.sln`
+and select the shared **API (local, migrate first)** configuration in Rider.
+Its Before launch task runs **Migrate development database** to completion before
+starting the API debugger. A failed migration returns a nonzero exit code and
+blocks API startup. These configurations contain no credentials.
+
+For CLI development, or when using the generated **Api: http** configuration,
+run the local development migrator before starting the API:
 
 ```sh
 dotnet run --project src/Backend/Migrator --launch-profile Development
@@ -53,8 +59,8 @@ docker compose --env-file deploy/.env -f deploy/compose.dev.yml exec -T postgres
 This bootstrap is development-only and is also run on a fresh Compose database.
 It must never be applied to production.
 
-Select **Api: http** in Rider and debug the API as a local .NET process. Its URL
-is `http://localhost:8090`, matching the development Keycloak client's registered
+The API runs as a local .NET process. Its URL is `http://localhost:8090`, matching
+the development Keycloak client's registered
 `http://localhost:8090/signin-oidc` callback. The browser opens `/swagger`.
 
 The project uses `UserSecretsId` for development credentials. Initialize User
