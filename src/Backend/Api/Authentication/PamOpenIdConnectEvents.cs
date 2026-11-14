@@ -1,3 +1,4 @@
+using Application.Common.Diagnostics;
 using Application.Identity;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -10,11 +11,12 @@ public sealed class PamOpenIdConnectEvents(
     IProblemDetailsService problemDetails,
     ILogger<PamOpenIdConnectEvents> logger) : OpenIdConnectEvents
 {
-    private static readonly Action<ILogger, string?, string, Exception?> LogLoginFailure =
-        LoggerMessage.Define<string?, string>(
+    private static readonly Action<ILogger, string?, string, string?, string, Exception?> LogLoginFailure =
+        LoggerMessage.Define<string?, string, string?, string>(
             LogLevel.Error,
             new EventId(0),
-            "OIDC login failed. Error type: {ErrorType}, correlation: {CorrelationId}");
+            "OIDC login failed. Error type: {ErrorType}, correlation: {CorrelationId}, "
+            + "database code: {DatabaseCode}, location: {ErrorLocation}");
 
     public override async Task TokenValidated(TokenValidatedContext context)
     {
@@ -65,10 +67,13 @@ public sealed class PamOpenIdConnectEvents(
             return;
         }
 
+        var diagnostic = context.Failure is { } failure ? ExceptionDiagnostics.Capture(failure) : null;
         LogLoginFailure(
             logger,
-            context.Failure?.GetType().FullName,
+            diagnostic?.ErrorType,
             context.HttpContext.TraceIdentifier,
+            diagnostic?.DatabaseCode,
+            diagnostic?.Location ?? "unavailable",
             null);
 
         await WriteProblemAsync(context.HttpContext, StatusCodes.Status500InternalServerError);

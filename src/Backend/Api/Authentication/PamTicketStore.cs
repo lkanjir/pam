@@ -1,3 +1,4 @@
+using Application.Common.Diagnostics;
 using Application.Sessions;
 using Infrastructure.Authentication;
 using Infrastructure.Sessions;
@@ -13,12 +14,12 @@ public sealed class PamTicketStore(
     PamSessionLifetime sessionLifetime,
     ILogger<PamTicketStore> logger) : ITicketStore
 {
-    private static readonly Action<ILogger, string, string?, Exception?> LogUnissuedSessionRemovalFailure =
-        LoggerMessage.Define<string, string?>(
+    private static readonly Action<ILogger, string, string?, string, Exception?> LogUnissuedSessionRemovalFailure =
+        LoggerMessage.Define<string, string?, string>(
             LogLevel.Error,
             new EventId(0),
             "Failed to remove an unissued session. " +
-            "Error type: {ErrorType}; correlation: {CorrelationId}. " +
+            "Error type: {ErrorType}; correlation: {CorrelationId}; location: {ErrorLocation}. " +
             "The stored ticket will expire through its TTL.");
 
     public Task<string> StoreAsync(AuthenticationTicket ticket) =>
@@ -66,10 +67,12 @@ public sealed class PamTicketStore(
         }
         catch (Exception ex)
         {
+            var diagnostic = ExceptionDiagnostics.Capture(ex);
             LogUnissuedSessionRemovalFailure(
                 logger,
-                ex.GetType().Name,
+                diagnostic.ErrorType,
                 correlationId,
+                diagnostic.Location,
                 null);
         }
     }
