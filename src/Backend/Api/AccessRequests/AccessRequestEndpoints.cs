@@ -19,17 +19,19 @@ public static class AccessRequestEndpoints
                 + "and belong together. Duration must be within the entitlement maximum; justification is required "
                 + "(maximum 2000 characters), and a ticket is required when configured (maximum 100 characters). "
                 + "Provide one Idempotency-Key header of 1–128 printable non-whitespace ASCII characters. "
-                + "Use a unique key for each submission. A valid submission returns 201 with PendingApproval or Denied. "
+                + "A new valid submission returns 201 with PendingApproval or Denied. Replaying the key with "
+                + "the same normalized payload returns the original request with 200; a different payload returns 409. "
                 + "This endpoint does not approve requests or grant access.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
 
         return endpoints;
     }
 
-    private static async Task<Results<Created<AccessRequestResponse>,
+    private static async Task<Results<Created<AccessRequestResponse>, Ok<AccessRequestResponse>,
         ValidationProblem, ProblemHttpResult, UnauthorizedHttpResult>> Submit(
         CreateAccessRequestRequest request,
         [FromHeader(Name = "Idempotency-Key"), Required, StringLength(128, MinimumLength = 1)] string? idempotencyKey,
@@ -63,12 +65,22 @@ public static class AccessRequestEndpoints
             return TypedResults.ValidationProblem(result.Errors);
         }
 
+        if (result.Kind == AccessRequestSubmissionKind.Conflict)
+        {
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "The idempotency key was already used for a different request.",
+                extensions: new Dictionary<string, object?> { ["code"] = "idempotency_conflict" });
+        }
+
         if (result.Kind == AccessRequestSubmissionKind.Forbidden)
         {
             return TypedResults.Problem(statusCode: StatusCodes.Status403Forbidden);
         }
 
         var response = result.Request ?? throw new InvalidOperationException("Submission returned no request.");
-        return TypedResults.Created($"/api/access-requests/{response.Id}", response);
+        return result.Kind == AccessRequestSubmissionKind.Replayed
+            ? TypedResults.Ok(response)
+            : TypedResults.Created($"/api/access-requests/{response.Id}", response);
     }
 }

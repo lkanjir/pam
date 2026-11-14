@@ -5,7 +5,9 @@ namespace Application.AccessRequests;
 public enum AccessRequestSubmissionKind
 {
     Created,
+    Replayed,
     Invalid,
+    Conflict,
     Forbidden
 }
 

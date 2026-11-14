@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using Application.AccessRequests;
 using Application.Sessions;
@@ -23,17 +24,30 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
             Justification = request.Justification.Trim(),
             TicketReference = string.IsNullOrWhiteSpace(request.TicketReference) ? null : request.TicketReference.Trim()
         };
+        string payloadHash = Convert.ToHexString(SHA256.HashData(
+            JsonSerializer.SerializeToUtf8Bytes(normalized, JsonOptions)));
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
+        // Serialize submissions only for this requester, across API replicas. Check the key after acquiring
+        // the row lock, so a concurrent identical submission observes the committed winner without retries
+        // or provider-exception classification. The unique database index remains the final constraint.
         var principal = await dbContext.Principals
-            .Where(principal => principal.Id == requester.Id)
+            .FromSql($"SELECT * FROM principals WHERE id = {requester.Id} FOR UPDATE")
             .AsNoTracking()
             .SingleOrDefaultAsync(cancellationToken);
         if (principal is null || !principal.IsEnabled || principal.PublicId != requester.PublicId
             || principal.Issuer != requester.Issuer || principal.Subject != requester.Subject)
         {
             return new(AccessRequestSubmissionKind.Forbidden);
+        }
+
+        var previous = await FindPreviousAsync(requester.Id, idempotencyKey, cancellationToken);
+        if (previous is not null)
+        {
+            return previous.PayloadHash == payloadHash
+                ? new(AccessRequestSubmissionKind.Replayed) { Request = previous.Response }
+                : new(AccessRequestSubmissionKind.Conflict);
         }
 
         var entitlement = await dbContext.Entitlements
@@ -76,6 +90,7 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
             TicketReference = normalized.TicketReference,
             State = state,
             IdempotencyKey = idempotencyKey,
+            PayloadHash = payloadHash,
             CreatedAt = now.UtcDateTime
         };
         string inputSnapshot = JsonSerializer.Serialize(new
@@ -139,6 +154,29 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
         };
     }
 
+    private Task<PreviousSubmission?> FindPreviousAsync(
+        long principalId,
+        string key,
+        CancellationToken cancellationToken)
+    {
+        // Replays use persisted decisions even if the resource was later retired or eligibility changed.
+        return (from request in dbContext.AccessRequests.IgnoreQueryFilters()
+                join entitlement in dbContext.Entitlements on request.EntitlementId equals entitlement.Id
+                join resource in dbContext.ManagedResources on entitlement.ResourceId equals resource.Id
+                join evaluation in dbContext.PolicyEvaluations on request.Id equals evaluation.RequestId
+                where request.RequesterPrincipalId == principalId && request.IdempotencyKey == key
+                select new PreviousSubmission(request.PayloadHash, new AccessRequestResponse(
+                    request.PublicId, resource.PublicId, entitlement.PublicId,
+                    request.RequestedDurationMinutes, request.Justification, request.TicketReference,
+                    request.State, new DateTimeOffset(request.CreatedAt, TimeSpan.Zero),
+                    new PolicyEvaluationResponse(
+                        evaluation.PublicId, evaluation.PolicyCode, evaluation.PolicyVersion,
+                        evaluation.Decision, evaluation.ReasonCode ?? string.Empty,
+                        evaluation.Explanation ?? string.Empty,
+                        new DateTimeOffset(evaluation.EvaluatedAt, TimeSpan.Zero)))))
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
     private static AuditEvent CreateAuditEvent(
         string eventType,
         AccessRequest request,
@@ -185,6 +223,8 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
             ReasonCode = decision.ReasonCode,
             Metadata = metadata
         };
+
+    private sealed record PreviousSubmission(string? PayloadHash, AccessRequestResponse Response);
 
     private sealed record RequestEntitlement(
         long Id,
