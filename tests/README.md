@@ -72,6 +72,20 @@ and Redis TTL, and rejection of legacy tickets without expiration metadata.
 Live Keycloak/browser flows and natural-expiration reconciliation remain
 outside the current coverage. No sleeps or Keycloak calls are needed.
 
+## Migration environments
+
+`DevelopmentMigratorTests` covers the Development guard, shared configuration,
+cancellation and credential-safe failures. `DevelopmentDatabaseTests` runs the
+actual dev bootstrap and migrator as the app role, including repeated execution
+and transferring existing schema ownership while preserving rows.
+
+`ProductionDatabaseTests` applies EF-generated idempotent SQL as an admin without
+running the dev migrator. It applies the production permissions script twice and
+executes real API-role operations: normal CRUD and audit append/read succeed;
+schema changes, audit mutation and migration-history reads fail with PostgreSQL
+insufficient-privilege errors. Owner roles and inherited schema grants are refused.
+These tests use disposable databases, never the local Compose or production DB.
+
 ## Absolute session lifetime
 
 `PamSessionLifetime` stores `pam:absolute-expires-utc` in protected ticket properties.
