@@ -28,6 +28,19 @@ public static class PamApplication
     public static WebApplication UsePamApi(this WebApplication app)
     {
         app.UsePamErrorHandling();
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.StartsWithSegments("/api"))
+            {
+                context.Response.OnStarting(() =>
+                {
+                    context.Response.Headers.CacheControl = "no-store";
+                    return Task.CompletedTask;
+                });
+            }
+
+            await next(context);
+        });
         app.UseAuthentication();
         app.UseAuthorization();
 
