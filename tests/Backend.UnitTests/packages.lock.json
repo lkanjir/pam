@@ -393,7 +393,8 @@
           "Application": "[1.0.0, )",
           "Infrastructure": "[1.0.0, )",
           "Microsoft.AspNetCore.Authentication.OpenIdConnect": "[10.0.13, )",
-          "Microsoft.AspNetCore.OpenApi": "[10.0.12, )"
+          "Microsoft.AspNetCore.OpenApi": "[10.0.12, )",
+          "Swashbuckle.AspNetCore.SwaggerUI": "[11.0.1, )"
         }
       },
       "application": {
@@ -492,6 +493,12 @@
           "RESPite": "3.4.5",
           "System.IO.Hashing": "10.0.12"
         }
+      },
+      "Swashbuckle.AspNetCore.SwaggerUI": {
+        "type": "CentralTransitive",
+        "requested": "[11.0.1, )",
+        "resolved": "11.0.1",
+        "contentHash": "Mu0j015xm7W/Axz6J6bXrh+/qEiyUGQUIGrWWvivv732yO1LtnmyV3zRwWB1dOFvlrU/CWUZqIYe1+hIcsCacg=="
       }
     }
   }

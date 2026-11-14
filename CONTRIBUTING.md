@@ -21,6 +21,42 @@ This still checks skills, formatting and the entire solution build, but executes
 only unit tests. It does not replace the full check required before merge.
 See [test coverage and conventions](tests/README.md) for test design and isolation.
 
+## Run the API locally in Rider
+
+Run PostgreSQL, Redis, Keycloak and Vault independently of the API debugger:
+
+```sh
+docker compose --env-file deploy/.env -f deploy/compose.dev.yml up -d postgres redis keycloak vault
+```
+
+Stop the Compose `api` service before launching the local API, since both use
+localhost port 8090. Apply pending migrations with the Compose `migrator` service
+before starting the API when the schema changes; the local launch profile does
+not run migrations automatically.
+
+Select **Api: http** in Rider and debug the API as a local .NET process. Its URL
+is `http://localhost:8090`, matching the development Keycloak client's registered
+`http://localhost:8090/signin-oidc` callback. The browser opens `/swagger`.
+
+The project uses `UserSecretsId` for development credentials. Initialize User
+Secrets for the API if the project has not been configured yet, then use the
+.NET User Secrets CLI or Rider's User Secrets editor to populate these keys:
+
+- `Database:ConnectionString`: use `127.0.0.1:5433`, `POSTGRES_DB` and the app
+  identity (`APP_DB_USER` / `APP_DB_PASSWORD`), rather than the database admin.
+- `Redis:Password`: the development `REDIS_PASSWORD`.
+- `Keycloak:ClientSecret`: the development `KEYCLOAK_CLIENT_SECRET`.
+
+Keep these values in User Secrets rather than committed files or shared launch
+settings. Compose still needs `deploy/.env` for its containers; the API does not
+automatically import that file. `WebApplication.CreateBuilder` loads the API's
+User Secrets in Development. Environment variables override User Secrets, so
+remove stale Docker connection overrides from the local Rider profile.
+
+Non-secret host defaults belong in `appsettings.Development.json`: Redis uses
+`127.0.0.1:6379`, and Keycloak metadata uses `localhost:8080`. Compose supplies
+its own container-host overrides when running the entire stack in Docker.
+
 ## C# formatting
 
 The root `.editorconfig` is the shared source of formatting preferences:
