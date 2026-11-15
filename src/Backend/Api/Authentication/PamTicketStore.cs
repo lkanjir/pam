@@ -63,7 +63,7 @@ public sealed class PamTicketStore(
     {
         try
         {
-            await ticketStore.RemoveAsync(sessionId);
+            await ticketStore.DiscardUnissuedAsync(sessionId);
         }
         catch (Exception ex)
         {

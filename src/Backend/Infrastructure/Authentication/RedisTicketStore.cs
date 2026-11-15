@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using Application.Sessions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
@@ -13,6 +14,11 @@ public sealed class RedisTicketStore : ISessionTicketStore
     private readonly TimeProvider _timeProvider;
 
     private const string KeyPrefix = "pam:session:";
+    private const string LeasesKey = "pam:session:leases";
+    private static readonly JsonSerializerOptions RecoveryJsonOptions = new(JsonSerializerDefaults.Web);
+    private const string ObserveScript = """
+        return {redis.call('GET', KEYS[1]), redis.call('HGET', KEYS[2], ARGV[1])}
+        """;
 
     public RedisTicketStore(IConnectionMultiplexer redis, IDataProtectionProvider dataProtectionProvider,
         TimeProvider timeProvider)
@@ -31,10 +37,15 @@ public sealed class RedisTicketStore : ISessionTicketStore
             var payload = Protect(ticket, redisKey);
             var ttl = GetTimeToLive(ticket);
 
-            var stored = await _database.StringSetAsync(redisKey, payload, ttl, When.NotExists);
-
-            if (stored)
+            var transaction = _database.CreateTransaction();
+            transaction.AddCondition(Condition.KeyNotExists(redisKey));
+            var write = transaction.StringSetAsync(redisKey, payload, ttl);
+            var lease = transaction.HashSetAsync(LeasesKey, SessionIdentifier.Hash(sessionId),
+                JsonSerializer.Serialize(new LeaseV1(ticket.Properties.ExpiresUtc), RecoveryJsonOptions));
+            if (await transaction.ExecuteAsync())
             {
+                await write;
+                await lease;
                 return sessionId;
             }
         }
@@ -68,8 +79,11 @@ public sealed class RedisTicketStore : ISessionTicketStore
             transaction.AddCondition(Condition.StringEqual(redisKey, previous));
             // Queue the write before executing; awaiting it here would deadlock.
             var write = transaction.StringSetAsync(redisKey, payload, ttl);
+            var lease = transaction.HashSetAsync(LeasesKey, SessionIdentifier.Hash(key),
+                JsonSerializer.Serialize(new LeaseV1(proposedExpiry), RecoveryJsonOptions));
             if (await transaction.ExecuteAsync())
             {
+                await lease;
                 return await write;
             }
         }
@@ -120,6 +134,43 @@ public sealed class RedisTicketStore : ISessionTicketStore
 
         await _database.KeyDeleteAsync(GetRedisKey(key));
     }
+
+    public async Task DiscardUnissuedAsync(string key)
+    {
+        if (!SessionIdentifier.IsValid(key))
+        {
+            return;
+        }
+
+        var transaction = _database.CreateTransaction();
+        var ticket = transaction.KeyDeleteAsync(GetRedisKey(key));
+        var lease = transaction.HashDeleteAsync(LeasesKey, SessionIdentifier.Hash(key));
+        if (await transaction.ExecuteAsync())
+        {
+            await ticket;
+            await lease;
+        }
+    }
+
+    public async Task<SessionObservation> ObserveAsync(string sessionIdHash)
+    {
+        if (!SessionIdentifier.IsValid(sessionIdHash))
+        {
+            throw new ArgumentException("A valid session hash is required.", nameof(sessionIdHash));
+        }
+
+        var redisKey = KeyPrefix + sessionIdHash;
+        var result = (RedisResult[]?)await _database.ScriptEvaluateAsync(ObserveScript,
+            [redisKey, LeasesKey], [sessionIdHash])
+            ?? throw new InvalidOperationException("Session observation returned no result.");
+        RedisValue value = (RedisValue)result[0];
+        string? token = (string?)result[1];
+        var lease = token is null ? null : JsonSerializer.Deserialize<LeaseV1>(token, RecoveryJsonOptions);
+        return new SessionObservation(!value.IsNull, Unprotect(value, redisKey)?.Properties.ExpiresUtc,
+            lease?.ExpiresAt, token);
+    }
+
+    private sealed record LeaseV1(DateTimeOffset? ExpiresAt);
 
     private static string GetRedisKey(string sessionId) => KeyPrefix + SessionIdentifier.Hash(sessionId);
 
