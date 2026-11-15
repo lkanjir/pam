@@ -15,9 +15,28 @@ public sealed class RedisTicketStore : ISessionTicketStore
 
     private const string KeyPrefix = "pam:session:";
     private const string LeasesKey = "pam:session:leases";
+    private const string PendingEndsKey = "pam:session:pending-ends";
     private static readonly JsonSerializerOptions RecoveryJsonOptions = new(JsonSerializerDefaults.Web);
     private const string ObserveScript = """
-        return {redis.call('GET', KEYS[1]), redis.call('HGET', KEYS[2], ARGV[1])}
+        return {redis.call('GET', KEYS[1]), redis.call('HGET', KEYS[2], ARGV[1]), redis.call('HGET', KEYS[3], ARGV[1])}
+        """;
+    private const string EndScript = """
+        local pending = redis.call('HGET', KEYS[3], ARGV[1])
+        if pending then return pending end
+        local ticket = redis.call('GET', KEYS[1])
+        local lease = redis.call('HGET', KEYS[2], ARGV[1])
+        if ARGV[3] == 'observed' then
+            if (ticket and '1' or '0') ~= ARGV[4] or (lease or '') ~= ARGV[5] then return false end
+        elseif not ticket and not lease then
+            return false
+        end
+        local record = cjson.decode(ARGV[2])
+        if lease then record.expectedExpiresAt = cjson.decode(lease).expiresAt end
+        local encoded = cjson.encode(record)
+        redis.call('HSET', KEYS[3], ARGV[1], encoded)
+        redis.call('DEL', KEYS[1])
+        redis.call('HDEL', KEYS[2], ARGV[1])
+        return encoded
         """;
 
     public RedisTicketStore(IConnectionMultiplexer redis, IDataProtectionProvider dataProtectionProvider,
@@ -161,13 +180,76 @@ public sealed class RedisTicketStore : ISessionTicketStore
 
         var redisKey = KeyPrefix + sessionIdHash;
         var result = (RedisResult[]?)await _database.ScriptEvaluateAsync(ObserveScript,
-            [redisKey, LeasesKey], [sessionIdHash])
+            [redisKey, LeasesKey, PendingEndsKey], [sessionIdHash])
             ?? throw new InvalidOperationException("Session observation returned no result.");
         RedisValue value = (RedisValue)result[0];
         string? token = (string?)result[1];
         var lease = token is null ? null : JsonSerializer.Deserialize<LeaseV1>(token, RecoveryJsonOptions);
         return new SessionObservation(!value.IsNull, Unprotect(value, redisKey)?.Properties.ExpiresUtc,
-            lease?.ExpiresAt, token);
+            lease?.ExpiresAt, token)
+        {
+            PendingEnd = result[2].IsNull ? null : ReadEnd((string?)result[2], sessionIdHash)
+        };
+    }
+
+    public async Task<PendingSessionEnd?> EndAsync(PendingSessionEnd completion, SessionObservation? expected = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(completion.CorrelationId);
+        if (!SessionIdentifier.IsValid(completion.SessionIdHash))
+        {
+            throw new ArgumentException("A valid session hash is required.", nameof(completion));
+        }
+
+        if (expected is null && completion.ExpectedExpiresAt is null)
+        {
+            var current = await ObserveAsync(completion.SessionIdHash);
+            completion = completion with { ExpectedExpiresAt = current.TicketExpiresAt ?? current.LeaseExpiresAt };
+        }
+
+        var result = await _database.ScriptEvaluateAsync(EndScript,
+            [KeyPrefix + completion.SessionIdHash, LeasesKey, PendingEndsKey],
+            [completion.SessionIdHash, JsonSerializer.Serialize(completion, RecoveryJsonOptions), expected is null ? "explicit" : "observed",
+                expected?.HasTicket == true ? "1" : "0", expected?.LeaseVersion ?? string.Empty]);
+        return result.IsNull ? null : ReadEnd((string?)result, completion.SessionIdHash);
+    }
+
+    public async Task<IReadOnlyList<PendingSessionEnd>> ReadPendingEndsAsync(int limit)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, 1000);
+        var result = new List<PendingSessionEnd>();
+        await foreach (var entry in _database.HashScanAsync(PendingEndsKey, pageSize: limit))
+        {
+            result.Add(ReadEnd(entry.Value.ToString(), entry.Name.ToString()));
+            if (result.Count == limit)
+            {
+                break;
+            }
+        }
+
+        return result;
+    }
+
+    public Task AcknowledgeEndAsync(string sessionIdHash)
+    {
+        if (!SessionIdentifier.IsValid(sessionIdHash))
+        {
+            throw new ArgumentException("A valid session hash is required.", nameof(sessionIdHash));
+        }
+
+        return _database.HashDeleteAsync(PendingEndsKey, sessionIdHash);
+    }
+
+    private static PendingSessionEnd ReadEnd(string? json, string hash)
+    {
+        var end = json is null ? null : JsonSerializer.Deserialize<PendingSessionEnd>(json, RecoveryJsonOptions);
+        if (end is null || end.SessionIdHash != hash || !SessionIdentifier.IsValid(hash)
+            || string.IsNullOrWhiteSpace(end.CorrelationId))
+        {
+            throw new InvalidOperationException("The session recovery record is invalid.");
+        }
+
+        return end;
     }
 
     private sealed record LeaseV1(DateTimeOffset? ExpiresAt);

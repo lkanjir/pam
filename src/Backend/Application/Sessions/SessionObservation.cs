@@ -5,4 +5,7 @@ public sealed record SessionObservation(
     bool HasTicket,
     DateTimeOffset? TicketExpiresAt,
     DateTimeOffset? LeaseExpiresAt,
-    string? LeaseVersion);
+    string? LeaseVersion)
+{
+    public PendingSessionEnd? PendingEnd { get; init; }
+}
