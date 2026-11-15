@@ -86,6 +86,56 @@ public sealed class SessionRecoveryStoreTests(RedisFixture redis) : IClassFixtur
     }
 
     [Fact]
+    public async Task End_TicketChangedWithoutLeaseChange_RejectsStaleObservation()
+    {
+        // Arrange
+        var clock = new TestTimeProvider();
+        var store = new RedisTicketStore(redis.Connection, new EphemeralDataProtectionProvider(), clock);
+        string id = await store.StoreAsync(SessionTestData.Ticket(clock.Now));
+        string hash = SessionIdentifier.Hash(id);
+        var original = await store.ObserveAsync(hash);
+        clock.Now = clock.Now.AddMinutes(16);
+        Assert.True(await store.TryRenewAsync(id, SessionTestData.Ticket(clock.Now)));
+        Assert.NotNull(original.LeaseVersion);
+        // Simulate a legacy producer that changes the encrypted ticket without updating the lease.
+        await redis.Connection.GetDatabase().HashSetAsync("pam:session:leases", hash, original.LeaseVersion);
+
+        // Act
+        var result = await store.EndAsync(new PendingSessionEnd(hash, clock.Now, "expired", "old-observer"), original);
+
+        // Assert
+        Assert.Null(result);
+        Assert.NotNull(await store.RetrieveAsync(id));
+        Assert.Null((await store.ObserveAsync(hash)).PendingEnd);
+        await store.DiscardUnissuedAsync(id);
+    }
+
+    [Fact]
+    public async Task PendingEnds_DistinctDatabaseScopes_DoNotDrainEachOthersCompletions()
+    {
+        // Arrange
+        var clock = new TestTimeProvider();
+        var protection = new EphemeralDataProtectionProvider();
+        var first = new RedisTicketStore(redis.Connection, protection, clock, Guid.NewGuid().ToString("N"));
+        var second = new RedisTicketStore(redis.Connection, protection, clock, Guid.NewGuid().ToString("N"));
+        string one = SessionIdentifier.Hash(await first.StoreAsync(SessionTestData.Ticket(clock.Now)));
+        string two = SessionIdentifier.Hash(await second.StoreAsync(SessionTestData.Ticket(clock.Now)));
+        await first.EndAsync(new PendingSessionEnd(one, clock.Now, "logout", "first"));
+        await second.EndAsync(new PendingSessionEnd(two, clock.Now, "logout", "second"));
+
+        // Act
+        var firstQueue = await first.ReadPendingEndsAsync(10);
+        await first.AcknowledgeEndAsync(one);
+        var secondQueue = await second.ReadPendingEndsAsync(10);
+
+        // Assert
+        Assert.Equal(one, Assert.Single(firstQueue).SessionIdHash);
+        Assert.Equal(two, Assert.Single(secondQueue).SessionIdHash);
+        Assert.Empty(await first.ReadPendingEndsAsync(10));
+        await second.AcknowledgeEndAsync(two);
+    }
+
+    [Fact]
     public async Task Store_TicketAndLease_ExposeOnlyNonSecretRecoveryMetadata()
     {
         // Arrange
