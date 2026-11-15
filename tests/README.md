@@ -69,8 +69,9 @@ remain for persistence failures and termination-feature cleanup within one conte
 Lifetime tests check acceptance at 7:59, rejection at 8:00, capped ledger expiry
 and Redis TTL, and rejection of legacy tickets without expiration metadata.
 
-Live Keycloak/browser flows and natural-expiration reconciliation remain
-outside the current coverage. No sleeps or Keycloak calls are needed.
+Live Keycloak/browser flows remain outside the current coverage. Session
+reconciliation uses real storage and deterministic clocks; no sleeps or Keycloak
+calls are needed.
 
 ## Migration environments
 
@@ -97,7 +98,6 @@ silent; this is not a requirement to re-enter credentials every eight hours.
 Expiry enforcement rejects the ticket immediately. The periodic session reconciler
 records `expired` and fills `EndedAt` at the retained lease deadline; if all Redis
 recovery data has disappeared, it records `session_lost` at detection time instead.
-That remains separate work from enforcing access expiration.
 
 ## Access changes
 
@@ -110,7 +110,8 @@ lookup failures fail the request instead of accepting stale authorization data.
 
 Redis renewal compares the expiration in the protected current ticket and uses an
 StackExchange.Redis conditional transaction (`Condition.StringEqual`) to atomically
-replace that exact payload and its TTL. There are no application-owned Lua scripts. Older/equal expirations are
+replace that exact payload, TTL and recovery lease. Separate small Lua scripts
+atomically observe tickets and seal end intents. Older/equal expirations are
 ignored; removal or expiration between the read and write cannot recreate a session.
 Contention is retried at most eight times, then leaves the winning ticket intact.
 The ledger is extended only after a successful Redis update. Regression tests cover
@@ -156,14 +157,19 @@ before the cookie `SigningOut` event. Call sites do not manipulate request featu
 
 The ticket-store adapter delegates explicit endings to the scoped
 `SessionTerminator.EndSessionAsync(sessionId, reason, correlationId)`. This operation
-can also be invoked without HTTP. It revokes storage first, then persists the end
+can also be invoked without HTTP. It atomically retains the first end intent while
+revoking the ticket, then persists the end
 with stable codes `logout`, `reauthentication` or `access_changed`. Storage failure
 propagates without an end audit; audit failure after revocation is logged and does
-not undo revocation or prevent cookie expiry. The caller correlation ID is required before revocation and is preserved in both
+not undo revocation or prevent cookie expiry. The retained end intent is retried by
+the session reconciler until ledger/audit persistence and acknowledgement succeed.
+The caller correlation ID is required before revocation and is preserved in both
 failure logs and the session-end audit, without generation in the persistence layer.
 
 Framework removal without explicit intent, and cleanup of an unissued session,
-remain storage-only operations. They do not record a user logout. Tests cover all
+remain storage-only operations. They do not record a user logout. Framework
+removal keeps the lease for later reconciliation; unissued cleanup discards it.
+Tests cover all
 three reason codes, operation ordering, storage/audit failures and isolation of the
 sign-out intent from later cleanup in the same request.
 
@@ -239,7 +245,7 @@ timestamps, and the deletion timestamp. Earlier snapshot fields retain their nam
 Read/create regressions exercise Location resolution, explicit/default active state,
 cursor pagination without overlap, a cursor whose last resource was deleted,
 invalid cursors/limits and authentication. These are HTTP/storage tests; unit tests
-do not mock EF query behavior. Concurrent writes currently use EF's default
+do not mock EF query behavior. Concurrent writes use
 optimistic concurrency through strong resource ETags. PUT and DELETE require one
 canonical `If-Match` value: missing is 428, invalid is 400 and stale is 412.
 `ResourceConcurrencyTests` proves that concurrent losing writes, including no-op
@@ -304,7 +310,7 @@ policy and either audit insert, proving transaction rollback.
 The local `/login` test substitute now creates claims from the seeded principal's
 actual public identity through `PamClaims`, supporting realistic requester audit
 snapshots and multiple principals. The external identity provider remains
-substituted. Own-request GET endpoints are still separate work.
+substituted. Own-request GET endpoints are covered by the list/detail suites.
 
 Verification on 2026-11-14: the focused runs passed **12 policy unit tests and
 56 submission integration cases**. `bash scripts/check.sh` passed the complete
@@ -381,3 +387,10 @@ bounded keyset sweeps while new sessions arrive. Redis connection errors must
 leave ledgers open, and cancellation must stop work. Other HTTP fixtures disable
 the hosted worker to keep their state transitions under test control; direct
 reconciliation tests invoke production passes with a fresh scope each time.
+
+Verification on 2026-11-15 after the six backend review fixes:
+`bash scripts/check.sh` passed pinned skill verification, locked restore, formatting,
+analyzers and the warning-free Release build. **113 unit and 291 integration tests
+passed**, with zero failures or skips. The EF model matches its latest migration.
+The reviewed migration-range SQL export contains the open-session partial index
+and migration history entries, with no duplicate physical xmin column.
