@@ -18,6 +18,85 @@ public sealed class ResourceConcurrencyTests(PostgresFixture postgres, RedisFixt
     [Theory]
     [InlineData(null, 428)]
     [InlineData("broken", 400)]
+    public async Task Delete_MissingOrInvalidPrecondition_DoesNotRetireOrAudit(string? tag, int status)
+    {
+        // Arrange
+        await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection);
+        await test.AuthenticateAsync();
+        test.Client.DefaultRequestHeaders.Remove("If-Match");
+        if (tag is not null)
+        {
+            test.Client.DefaultRequestHeaders.TryAddWithoutValidation("If-Match", tag);
+        }
+
+        // Act
+        using var response = await test.Client.DeleteAsync(test.ResourceUrl);
+
+        // Assert
+        Assert.Equal(status, (int)response.StatusCode);
+        Assert.Null((await test.ReadResourceAsync()).DeletedAt);
+        Assert.Equal(0, await test.CountAuditEventsAsync("resource.deleted"));
+    }
+
+    [Fact]
+    public async Task Delete_StaleVersion_DoesNotRetireTheModifiedResource()
+    {
+        // Arrange
+        await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection);
+        await test.AuthenticateAsync();
+        test.Resource.Name = "Other writer";
+        await test.Database.Context.SaveChangesAsync();
+
+        // Act
+        using var response = await test.Client.DeleteAsync(test.ResourceUrl);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.PreconditionFailed, response.StatusCode);
+        var saved = await test.ReadResourceAsync();
+        Assert.Null(saved.DeletedAt);
+        Assert.Equal("Other writer", saved.Name);
+        Assert.Equal(0, await test.CountAuditEventsAsync("resource.deleted"));
+    }
+
+    [Fact]
+    public async Task Delete_CompetingUpdateAfterReading_OnlyTheWinningChangeAndAuditCommit()
+    {
+        // Arrange
+        await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection);
+        var gate = new SaveGate();
+        var options = new DbContextOptionsBuilder<PamDbContext>()
+            .UseNpgsql(test.Database.Context.Database.GetConnectionString()).UseSnakeCaseNamingConvention()
+            .AddInterceptors(gate).Options;
+        await using var deletionContext = new PamDbContext(options);
+        await using var updateContext = new PamDbContext(options);
+        var principal = await test.Database.Context.Principals.SingleAsync(item => item.Id == test.ActorId);
+        var actor = new PrincipalSnapshot(principal.Id, principal.PublicId, principal.DisplayName, principal.Issuer, principal.Subject);
+        var deletionService = new ResourceService(deletionContext, test.Clock);
+        var updateService = new ResourceService(updateContext, test.Clock);
+
+        // Act
+        var deletion = deletionService.DeleteAsync(test.Resource.PublicId, actor, "delete", test.Resource.Version);
+        var update = updateService.UpdateAsync(test.Resource.PublicId, Payload("Changed"), actor, "update", test.Resource.Version);
+        await Task.WhenAll(deletion, update);
+
+        // Assert
+        var deletionResult = await deletion;
+        var updateResult = await update;
+        Assert.True((deletionResult == ResourceWriteKind.Succeeded && updateResult.Kind == ResourceWriteKind.Conflict)
+            || (deletionResult == ResourceWriteKind.Conflict && updateResult.Kind == ResourceWriteKind.Succeeded));
+        var saved = await test.ReadResourceAsync();
+        var audit = await test.Database.Context.AuditEvents.SingleAsync();
+        Assert.Equal(deletionResult == ResourceWriteKind.Succeeded, saved.DeletedAt is not null);
+        Assert.Equal(deletionResult == ResourceWriteKind.Succeeded ? "resource.deleted" : "resource.updated", audit.EventType);
+        Assert.NotNull(audit.ResourceSnapshot);
+        using var snapshot = JsonDocument.Parse(audit.ResourceSnapshot);
+        Assert.Equal(saved.Name, snapshot.RootElement.GetProperty("name").GetString());
+        Assert.Equal(saved.IsActive, snapshot.RootElement.GetProperty("isActive").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData(null, 428)]
+    [InlineData("broken", 400)]
     [InlineData("*", 400)]
     [InlineData("W/\"00000001\"", 400)]
     [InlineData("\"00000000\"", 400)]
@@ -82,11 +161,20 @@ public sealed class ResourceConcurrencyTests(PostgresFixture postgres, RedisFixt
         Assert.Equal(1, await test.CountAuditEventsAsync("resource.updated"));
     }
 
-    [Fact]
-    public async Task Update_ConcurrentWritersAfterReading_RollsBackLosingAuditAndPreventsMixedSnapshots()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Update_ConcurrentWritersAfterReading_RollsBackLosingAuditAndPreventsMixedSnapshots(bool noOp)
     {
         // Arrange
         await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection);
+        if (noOp)
+        {
+            test.Resource.ModifiedAt = test.Clock.Now.UtcDateTime;
+            test.Resource.ModifiedByPrincipalId = test.ActorId;
+            await test.Database.Context.SaveChangesAsync();
+        }
+
         var gate = new SaveGate();
         var options = new DbContextOptionsBuilder<PamDbContext>()
             .UseNpgsql(test.Database.Context.Database.GetConnectionString()).UseSnakeCaseNamingConvention()
@@ -97,8 +185,8 @@ public sealed class ResourceConcurrencyTests(PostgresFixture postgres, RedisFixt
         var actor = new PrincipalSnapshot(principal.Id, principal.PublicId, principal.DisplayName, principal.Issuer, principal.Subject);
         var first = new ResourceService(firstContext, test.Clock);
         var second = new ResourceService(secondContext, test.Clock);
-        var rename = Payload("Renamed target") with { Description = "Original description" };
-        var describe = Payload("Original target") with { Description = "Other description" };
+        var rename = Payload(noOp ? "Original target" : "Renamed target") with { Description = "Original description" };
+        var describe = Payload("Original target") with { Description = noOp ? "Original description" : "Other description" };
 
         // Act
         var results = await Task.WhenAll(
@@ -113,13 +201,16 @@ public sealed class ResourceConcurrencyTests(PostgresFixture postgres, RedisFixt
         Assert.Equal(winner.Resource.Name, saved.Name);
         Assert.Equal(winner.Resource.Description, saved.Description);
         var audit = await test.Database.Context.AuditEvents.SingleAsync(item => item.EventType == "resource.updated");
-        using var snapshot = JsonDocument.Parse(audit.ResourceSnapshot!);
+        Assert.NotNull(audit.ResourceSnapshot);
+        using var snapshot = JsonDocument.Parse(audit.ResourceSnapshot);
         Assert.Equal(saved.Name, snapshot.RootElement.GetProperty("name").GetString());
         Assert.Equal(saved.Description, snapshot.RootElement.GetProperty("description").GetString());
     }
 
-    [Fact]
-    public async Task Update_OpenApi_RequiresIfMatchAndDocumentsPreconditionResponses()
+    [Theory]
+    [InlineData("put")]
+    [InlineData("delete")]
+    public async Task Write_OpenApi_RequiresIfMatchAndDocumentsPreconditionResponses(string method)
     {
         // Arrange
         await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection);
@@ -130,7 +221,7 @@ public sealed class ResourceConcurrencyTests(PostgresFixture postgres, RedisFixt
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var operation = json.RootElement.GetProperty("paths").GetProperty("/api/resources/{id}").GetProperty("put");
+        var operation = json.RootElement.GetProperty("paths").GetProperty("/api/resources/{id}").GetProperty(method);
         var header = Assert.Single(operation.GetProperty("parameters").EnumerateArray(),
             item => item.GetProperty("name").GetString() == "If-Match");
         Assert.Equal("header", header.GetProperty("in").GetString());
