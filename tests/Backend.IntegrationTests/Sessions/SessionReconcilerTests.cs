@@ -42,10 +42,39 @@ public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixtur
         Assert.NotNull(await test.Tickets.RetrieveAsync(id));
     }
 
+    [Fact]
+    public async Task Renew_DatabaseRejectsExpiry_LeavesTicketValidForLaterReconciliation()
+    {
+        // Arrange
+        await using var test = await RecoveryContext.CreateAsync(postgres, redis);
+        string id = await test.StartAsync();
+        var initial = test.Clock.Now;
+        await test.Database.Context.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE authentication_session_ledger ADD CONSTRAINT reject_renewal CHECK (expected_expires_at <= TIMESTAMPTZ '2026-10-23 12:30:00Z')");
+        test.Clock.Now = initial.AddMinutes(16);
+        var ticket = await test.Tickets.RetrieveAsync(id);
+        Assert.NotNull(ticket);
+        ticket.Properties.ExpiresUtc = initial.AddMinutes(46);
+
+        // Act
+        await test.Services.GetRequiredService<ITicketStore>().RenewAsync(id, ticket);
+
+        // Assert
+        Assert.Equal(initial.AddMinutes(46), (await test.Tickets.RetrieveAsync(id))?.Properties.ExpiresUtc);
+        Assert.Equal(initial.AddMinutes(30).UtcDateTime,
+            await test.Database.Context.AuthenticationSessionLedgers.Select(s => s.ExpectedExpiresAt).SingleAsync());
+        await test.Database.Context.Database.ExecuteSqlRawAsync("ALTER TABLE authentication_session_ledger DROP CONSTRAINT reject_renewal");
+        await test.RunAsync();
+        var row = await test.Database.Context.AuthenticationSessionLedgers.AsNoTracking().SingleAsync();
+        Assert.Equal(initial.AddMinutes(46).UtcDateTime, row.ExpectedExpiresAt);
+        Assert.Null(row.EndedAt);
+    }
+
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Run_KnownExpiry_RecordsDeadlineEvenAfterPhysicalTicketLoss(bool ticketLost)
+    [InlineData(false, 0)]
+    [InlineData(false, 1)]
+    [InlineData(true, 1)]
+    public async Task Run_KnownExpiry_RecordsDeadlineEvenAfterPhysicalTicketLoss(bool ticketLost, int delayMinutes)
     {
         // Arrange
         await using var test = await RecoveryContext.CreateAsync(postgres, redis);
@@ -55,7 +84,7 @@ public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixtur
         {
             await test.Tickets.RemoveAsync(id);
         }
-        test.Clock.Now = deadline.AddMinutes(1);
+        test.Clock.Now = deadline.AddMinutes(delayMinutes);
 
         // Act
         await test.RunAsync();
