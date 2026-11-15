@@ -21,10 +21,11 @@ public interface IResourceService
         uint expectedVersion,
         CancellationToken cancellationToken = default);
 
-    Task<bool> DeleteAsync(
+    Task<ResourceWriteKind> DeleteAsync(
         Guid publicId,
         PrincipalSnapshot actor,
         string correlationId,
+        uint expectedVersion,
         CancellationToken cancellationToken = default);
 
     Task<CursorPage<ResourceResponse>> ListAsync(

@@ -30,7 +30,12 @@ public static class ResourceEndpoints
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
-        resources.MapDelete("/{id:guid}", Delete).ProducesProblem(StatusCodes.Status400BadRequest);
+        resources.MapDelete("/{id:guid}", Delete).WithResourceVersion()
+            .WithDescription("Requires one strong ETag in If-Match. Missing preconditions return 428; "
+                + "a stale version or concurrent write returns 412 without deleting or auditing the resource.")
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status412PreconditionFailed)
+            .ProducesProblem(StatusCodes.Status428PreconditionRequired);
 
         return endpoints;
     }
@@ -158,8 +163,9 @@ public static class ResourceEndpoints
         return TypedResults.Ok(resource);
     }
 
-    private static async Task<Results<NoContent, NotFound, UnauthorizedHttpResult>> Delete(
+    private static async Task<Results<NoContent, NotFound, UnauthorizedHttpResult, ProblemHttpResult>> Delete(
         Guid id,
+        [FromHeader(Name = "If-Match")] string? ifMatch,
         HttpContext context,
         IResourceService resourceService,
         CancellationToken cancellationToken)
@@ -169,6 +175,11 @@ public static class ResourceEndpoints
             return TypedResults.Unauthorized();
         }
 
+        if (ResourceEtags.RequireVersion(context.Request, ifMatch, out uint version) is { } precondition)
+        {
+            return precondition;
+        }
+
         var actor = new PrincipalSnapshot(
             identity.Id,
             identity.PublicId,
@@ -176,12 +187,18 @@ public static class ResourceEndpoints
             identity.Issuer,
             identity.Subject);
 
-        bool deleted = await resourceService.DeleteAsync(
+        var result = await resourceService.DeleteAsync(
             id,
             actor,
             context.TraceIdentifier,
+            version,
             cancellationToken);
 
-        return deleted ? TypedResults.NoContent() : TypedResults.NotFound();
+        if (result == ResourceWriteKind.Conflict)
+        {
+            return TypedResults.Problem(statusCode: StatusCodes.Status412PreconditionFailed);
+        }
+
+        return result == ResourceWriteKind.Succeeded ? TypedResults.NoContent() : TypedResults.NotFound();
     }
 }

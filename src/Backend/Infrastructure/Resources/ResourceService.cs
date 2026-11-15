@@ -124,10 +124,11 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
         });
     }
 
-    public async Task<bool> DeleteAsync(
+    public async Task<ResourceWriteKind> DeleteAsync(
         Guid publicId,
         PrincipalSnapshot actor,
         string correlationId,
+        uint expectedVersion,
         CancellationToken cancellationToken = default)
     {
         var resource = await dbContext.ManagedResources
@@ -135,7 +136,12 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
 
         if (resource is null)
         {
-            return false;
+            return ResourceWriteKind.NotFound;
+        }
+
+        if (resource.Version != expectedVersion)
+        {
+            return ResourceWriteKind.Conflict;
         }
 
         var now = timeProvider.GetUtcNow();
@@ -147,9 +153,16 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
         dbContext.AuditEvents.Add(CreateAuditEvent(
             "resource.deleted", resource, actor, now.UtcDateTime, correlationId));
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return ResourceWriteKind.Conflict;
+        }
 
-        return true;
+        return ResourceWriteKind.Succeeded;
     }
 
     public async Task<CursorPage<ResourceResponse>> ListAsync(
