@@ -89,6 +89,15 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPrincipalIdentityReader, PrincipalIdentityReader>();
         services.AddScoped<ISessionLedgerWriter, SessionLedgerWriter>();
         services.AddScoped<SessionTerminator>();
+        services.AddScoped<SessionReconciler>();
+        services.AddOptions<SessionReconciliationOptions>()
+            .Bind(configuration.GetSection(SessionReconciliationOptions.SectionName))
+            .Validate(options => options.Interval >= TimeSpan.FromSeconds(1) && options.Interval <= TimeSpan.FromHours(1),
+                "SessionReconciliation:Interval must be between one second and one hour")
+            .Validate(options => options.BatchSize is >= 1 and <= 1000,
+                "SessionReconciliation:BatchSize must be between 1 and 1000")
+            .ValidateOnStart();
+        services.AddHostedService<SessionReconciliationWorker>();
 
         services.AddScoped<IResourceService, ResourceService>();
         services.AddScoped<IAccessRequestService, AccessRequestService>();

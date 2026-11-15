@@ -22,6 +22,11 @@ public sealed class PamTicketStore(
             "Error type: {ErrorType}; correlation: {CorrelationId}; location: {ErrorLocation}. " +
             "The stored ticket will expire through its TTL.");
 
+    private static readonly Action<ILogger, string, string, string?, string, Exception?> LogRenewalFailure =
+        LoggerMessage.Define<string, string, string?, string>(LogLevel.Error, new EventId(0),
+            "Session renewal is retained in Redis; ledger reconciliation will retry. " +
+            "Session hash: {SessionIdHash}; error type: {ErrorType}; database code: {DatabaseCode}; location: {ErrorLocation}.");
+
     public Task<string> StoreAsync(AuthenticationTicket ticket) =>
         StoreCoreAsync(ticket, null, CancellationToken.None);
 
@@ -96,9 +101,22 @@ public sealed class PamTicketStore(
             return;
         }
 
-        var expiresAt = ticket.Properties.ExpiresUtc!.Value;
-
-        await ledgerWriter.RecordRenewedAsync(SessionIdentifier.Hash(key), expiresAt, cancellationToken);
+        var expiresAt = ticket.Properties.ExpiresUtc
+            ?? throw new InvalidOperationException("Renewed authentication ticket must have an expiration time.");
+        string hash = SessionIdentifier.Hash(key);
+        try
+        {
+            await ledgerWriter.RecordRenewedAsync(hash, expiresAt, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            var diagnostic = ExceptionDiagnostics.Capture(exception);
+            LogRenewalFailure(logger, hash, diagnostic.ErrorType, diagnostic.DatabaseCode, diagnostic.Location, null);
+        }
     }
 
     public async Task<AuthenticationTicket?> RetrieveAsync(string key)

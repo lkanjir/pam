@@ -94,7 +94,9 @@ sign in again. A successful new OIDC sign-in can start a new lifetime, with a fr
 `reauthentication`; the new session and its identity receive a separate start audit. Keycloak SSO may make that sign-in
 silent; this is not a requirement to re-enter credentials every eight hours.
 
-Expiry enforcement does not itself write an expired-session audit or fill `EndedAt`.
+Expiry enforcement rejects the ticket immediately. The periodic session reconciler
+records `expired` and fills `EndedAt` at the retained lease deadline; if all Redis
+recovery data has disappeared, it records `session_lost` at detection time instead.
 That remains separate work from enforcing access expiration.
 
 ## Access changes
@@ -238,7 +240,10 @@ Read/create regressions exercise Location resolution, explicit/default active st
 cursor pagination without overlap, a cursor whose last resource was deleted,
 invalid cursors/limits and authentication. These are HTTP/storage tests; unit tests
 do not mock EF query behavior. Concurrent writes currently use EF's default
-last-writer-wins behavior; ETags/version preconditions are not implemented.
+optimistic concurrency through strong resource ETags. PUT and DELETE require one
+canonical `If-Match` value: missing is 428, invalid is 400 and stale is 412.
+`ResourceConcurrencyTests` proves that concurrent losing writes, including no-op
+updates, cannot persist their audit event.
 
 ## Requestable resources
 
@@ -360,3 +365,19 @@ After PUT, DELETE and resource CRUD regressions, the same full-suite command pas
 **62 unit tests and 134 integration tests**. The 50 new resource cases use real HTTP,
 cookies/antiforgery, PostgreSQL and Redis. PUT's 24 cases also passed separately
 before DELETE implementation. Build completed with no warnings or errors.
+
+## Session reconciliation
+
+`SessionRecoveryStoreTests` exercises atomic Redis end intents, immutable first
+reason/time/correlation, scoped pending queues, lease retention and stale
+observation rejection across renewal. The opaque ticket revision is compared as
+well as the lease, including legacy ticket writes that do not change a lease.
+
+`SessionReconcilerTests` uses actual PostgreSQL and Redis with deterministic clocks.
+It proves repair of stale renewal expiry, exact known expiry, full metadata loss
+before and after the stale database deadline, retry after audit rejection,
+concurrent replica completion, cleanup after a lost acknowledgement, and fair
+bounded keyset sweeps while new sessions arrive. Redis connection errors must
+leave ledgers open, and cancellation must stop work. Other HTTP fixtures disable
+the hosted worker to keep their state transitions under test control; direct
+reconciliation tests invoke production passes with a fresh scope each time.

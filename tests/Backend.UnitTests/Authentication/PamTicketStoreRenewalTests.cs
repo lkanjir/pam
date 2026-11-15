@@ -92,7 +92,7 @@ public sealed class PamTicketStoreRenewalTests
     }
 
     [Fact]
-    public async Task RenewAsync_WhenLedgerFails_PropagatesOriginalFailure()
+    public async Task RenewAsync_WhenLedgerFails_DefersPersistenceWithoutFailingRenewal()
     {
         // Arrange
         using var fixture = new TicketStoreFixture();
@@ -107,7 +107,7 @@ public sealed class PamTicketStoreRenewalTests
             fixture.Store.RenewAsync(sessionId, fixture.StartedTicket()));
 
         // Assert
-        Assert.Same(failure, error);
+        Assert.Null(error);
     }
 
     [Fact]
@@ -122,8 +122,7 @@ public sealed class PamTicketStoreRenewalTests
             .ThrowsAsync(new InvalidOperationException("Database unavailable"));
 
         // Act
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            fixture.Store.RenewAsync(sessionId, fixture.StartedTicket()));
+        await fixture.Store.RenewAsync(sessionId, fixture.StartedTicket());
 
         // Assert
         A.CallTo(() => fixture.Tickets.RemoveAsync(sessionId)).MustNotHaveHappened();

@@ -100,6 +100,39 @@ with their admin account before deploying the matching API version. Production
 account provisioning and permissions are managed by the admin; the API account
 must not have schema migration privileges. No permissions script is generated.
 
+## Session ledger recovery
+
+Redis remains authoritative for authentication. PostgreSQL is an audit ledger and
+is never used as a fallback session store. Ticket creation/renewal also records a
+non-secret expiry lease in Redis. Explicit revocation atomically removes the
+ticket and lease and retains an immutable end intent containing the session hash,
+reason, original time and correlation ID. That intent is acknowledged only after
+the PostgreSQL ledger and its audit event have been committed together.
+
+`SessionReconciliation` settings default to `Enabled: true`, `Interval: 00:00:30`
+and `BatchSize: 200`. The interval must be between one second and one hour; batch
+size is 1–1000. Each API replica runs a scoped background pass with bounded pending
+retries and a keyset page of open ledger rows. Fixed sweep ceilings prevent new
+logins from starving older rows. Concurrent replicas can safely process the same
+completion. Redis recovery hashes are scoped to the configured PostgreSQL database
+name; replicas sharing that database must use the same Redis service. Independent
+deployments should use separate Redis services.
+
+A pass repairs stale renewal expiry, finishes retained end intents and records
+known expiry at the lease deadline. When the ticket disappears before a known
+future deadline, or all recovery metadata has been lost, it records `session_lost`
+at the time of detection. A stale ledger deadline is never used to invent a
+reason or historical time after complete Redis data loss. Redis errors fail the
+pass and are never treated as evidence of a missing session.
+
+Database failures retain the Redis intent for retry; successful Redis renewals
+remain valid while their ledger update is deferred. Recovery requires the
+dependencies to become available. The interval is not a completion deadline: a
+full sweep depends on open-session count and batch size. Precise original end
+information survives only while the Redis recovery record survives. If Redis
+loses it before PostgreSQL commits, the accepted fallback is `session_lost` with
+the detection time. Recovery records deliberately have no TTL until acknowledged.
+
 ## C# formatting
 
 The root `.editorconfig` is the shared source of formatting preferences:

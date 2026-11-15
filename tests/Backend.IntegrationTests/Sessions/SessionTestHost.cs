@@ -79,6 +79,7 @@ internal static class SessionTestHost
             ["Keycloak:MetadataAddress"] = "https://identity.example/realms/pam/.well-known/openid-configuration",
             ["Keycloak:ClientId"] = "test-bff",
             ["Keycloak:ClientSecret"] = "test-secret",
+            ["SessionReconciliation:Enabled"] = "false",
             ["PamSession:IdleTimeout"] = "00:30:00",
             ["PamSession:AbsoluteTimeout"] = "08:00:00"
         });
