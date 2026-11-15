@@ -1,14 +1,15 @@
 using System.Net;
 using Api;
 using Api.Authentication;
+using Application.Identity;
 using Backend.IntegrationTests.Fixtures;
 using Backend.Tests.Support;
+using Infrastructure.Persistence;
 using Infrastructure.Persistence.Entities;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
@@ -21,7 +22,7 @@ using StackExchange.Redis;
 namespace Backend.IntegrationTests.Sessions;
 
 [CollectionDefinition("Cookie sessions")]
-public sealed class CookieSessionCollection : ICollectionFixture<PostgresFixture>, ICollectionFixture<RedisFixture>;
+public sealed class CookieSessionTestGroup : ICollectionFixture<PostgresFixture>, ICollectionFixture<RedisFixture>;
 
 internal static class SessionTestHost
 {
@@ -37,13 +38,18 @@ internal static class SessionTestHost
         // Replace only the external identity provider's sign-in entry point.
         app.MapGet("/login", async (HttpContext context) =>
         {
-            var ticket = SessionTestData.Ticket(clock.Now, principalId);
+            long id = long.Parse(principalId, System.Globalization.CultureInfo.InvariantCulture);
+            var principal = await context.RequestServices.GetRequiredService<PamDbContext>().Principals
+                .AsNoTracking().SingleAsync(principal => principal.Id == id, context.RequestAborted);
+            var identity = PamClaims.Create(new PrincipalIdentity(
+                principal.Id, principal.PublicId, principal.DisplayName, principal.IsEnabled, []),
+                principal.Issuer, principal.Subject, "idp-session");
             var properties = new AuthenticationProperties
             {
                 IsPersistent = context.Request.Query["persistent"] == "True",
                 RedirectUri = context.Request.Query["redirect"] == "true" ? "/api/me" : null
             };
-            await context.SignInAsync("Cookies", ticket.Principal, properties);
+            await context.SignInAsync("Cookies", identity, properties);
         }).AllowAnonymous();
         await app.StartAsync();
         return app;
@@ -73,6 +79,7 @@ internal static class SessionTestHost
             ["Keycloak:MetadataAddress"] = "https://identity.example/realms/pam/.well-known/openid-configuration",
             ["Keycloak:ClientId"] = "test-bff",
             ["Keycloak:ClientSecret"] = "test-secret",
+            ["SessionReconciliation:Enabled"] = "false",
             ["PamSession:IdleTimeout"] = "00:30:00",
             ["PamSession:AbsoluteTimeout"] = "08:00:00"
         });
@@ -87,19 +94,31 @@ internal static class SessionTestHost
     public static void UpdateCookie(HttpClient client, HttpResponseMessage response)
     {
         if (!response.Headers.TryGetValues("Set-Cookie", out var cookies))
+        {
             return;
+        }
         // Standard sign-out followed by sign-in emits deletion and replacement.
         // Apply them in response order, as a browser does.
         var jar = new CookieContainer();
         if (client.DefaultRequestHeaders.TryGetValues("Cookie", out var existing))
+        {
             foreach (var cookie in existing.SelectMany(header => header.Split(';')))
+            {
                 jar.SetCookies(client.BaseAddress!, cookie.Trim());
+            }
+        }
+
         foreach (var cookie in cookies)
+        {
             jar.SetCookies(client.BaseAddress!, cookie);
+        }
+
         client.DefaultRequestHeaders.Remove("Cookie");
         var header = jar.GetCookieHeader(client.BaseAddress!);
         if (header.Length > 0)
+        {
             client.DefaultRequestHeaders.Add("Cookie", header);
+        }
     }
 
     public static Task RejectLogoutAuditAsync(TestDatabase database) =>
@@ -112,7 +131,8 @@ internal static class SessionTestHost
         var context = CreateContext(scope.ServiceProvider);
         var ticket = SessionTestData.Ticket(clock.GetUtcNow(), principalId);
         await context.SignInAsync("Cookies", ticket.Principal, ticket.Properties);
-        return context.Response.Headers.SetCookie.Single(value => value!.StartsWith("pam.session="))!.Split(';')[0];
+        return context.Response.Headers.SetCookie
+            .Single(value => value!.StartsWith("pam.session=", StringComparison.Ordinal))!.Split(';')[0];
     }
 
     public static DefaultHttpContext CreateLogoutContext(IServiceProvider services, string cookie)

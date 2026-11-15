@@ -88,7 +88,10 @@ public sealed class CookieLogoutTests(PostgresFixture postgres, RedisFixture red
         var cookie = await LoginAsync(services, clock, principalId);
         var hash = await database.Context.AuthenticationSessionLedgers.Select(s => s.SessionIdHash).SingleAsync();
         if (auditFails)
+        {
             await RejectLogoutAuditAsync(database);
+        }
+
         await using var scope = services.CreateAsyncScope();
         var context = CreateLogoutContext(scope.ServiceProvider, cookie);
 
@@ -111,7 +114,10 @@ public sealed class CookieLogoutTests(PostgresFixture postgres, RedisFixture red
         await using var services = CreateServices(database, clock, redis.Connection);
         var cookie = await LoginAsync(services, clock, principalId);
         if (auditFails)
+        {
             await RejectLogoutAuditAsync(database);
+        }
+
         await using var scope = services.CreateAsyncScope();
         var context = CreateLogoutContext(scope.ServiceProvider, cookie);
 
@@ -119,6 +125,7 @@ public sealed class CookieLogoutTests(PostgresFixture postgres, RedisFixture red
         await ExecuteLogoutEndpointAsync(context);
 
         // Assert
-        Assert.Contains(context.Response.Headers.SetCookie, value => value!.StartsWith("pam.session=;"));
+        Assert.Contains(context.Response.Headers.SetCookie,
+            value => value!.StartsWith("pam.session=;", StringComparison.Ordinal));
     }
 }

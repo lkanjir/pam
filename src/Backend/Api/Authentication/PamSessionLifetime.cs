@@ -19,18 +19,24 @@ public sealed class PamSessionLifetime(IOptions<PamSessionOptions> options, Time
         }
 
         if (!TryLimitExpiration(properties))
+        {
             throw new InvalidOperationException("Authentication ticket must have a valid future session expiration.");
+        }
     }
 
     public bool TryLimitExpiration(AuthenticationProperties properties)
     {
         if (!TryGetAbsoluteExpiration(properties, out var absoluteExpiresAt)
             || properties.ExpiresUtc is not { } expiresAt)
+        {
             return false;
+        }
 
         var limitedExpiry = expiresAt < absoluteExpiresAt ? expiresAt : absoluteExpiresAt;
         if (limitedExpiry - timeProvider.GetUtcNow() < TimeSpan.FromMilliseconds(1))
+        {
             return false;
+        }
 
         properties.ExpiresUtc = limitedExpiry;
         return true;

@@ -1,6 +1,6 @@
-using Infrastructure.Authentication;
 using Backend.IntegrationTests.Fixtures;
 using Backend.Tests.Support;
+using Infrastructure.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 
 namespace Backend.IntegrationTests.Sessions;
@@ -59,7 +59,9 @@ public sealed class RedisTicketStoreTests(RedisFixture redis) : IClassFixture<Re
 
         // Act
         if (concurrent)
+        {
             await Task.WhenAll(first.TryRenewAsync(id, newer), second.TryRenewAsync(id, older));
+        }
         else
         {
             await first.TryRenewAsync(id, newer);

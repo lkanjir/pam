@@ -1,7 +1,9 @@
+using Application.AccessRequests;
 using Application.Identity;
 using Application.Resources;
-using Infrastructure.Authentication;
 using Application.Sessions;
+using Infrastructure.AccessRequests;
+using Infrastructure.Authentication;
 using Infrastructure.Identity;
 using Infrastructure.Persistence;
 using Infrastructure.Resources;
@@ -14,6 +16,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using StackExchange.Redis;
 
 namespace Infrastructure;
@@ -68,7 +71,14 @@ public static class ServiceCollectionExtensions
             return ConnectionMultiplexer.Connect(redisConfiguration);
         });
 
-        services.AddSingleton<ISessionTicketStore, RedisTicketStore>();
+        services.AddSingleton<ISessionTicketStore>(serviceProvider =>
+        {
+            var database = new NpgsqlConnectionStringBuilder(
+                serviceProvider.GetRequiredService<IOptions<DatabaseOptions>>().Value.ConnectionString);
+            return new RedisTicketStore(serviceProvider.GetRequiredService<IConnectionMultiplexer>(),
+                serviceProvider.GetRequiredService<IDataProtectionProvider>(),
+                serviceProvider.GetRequiredService<TimeProvider>(), database.Database);
+        });
 
         services.AddDataProtection().SetApplicationName("pam");
         services.AddOptions<KeyManagementOptions>().Configure<IConnectionMultiplexer>((options, redis) =>
@@ -79,8 +89,18 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPrincipalIdentityReader, PrincipalIdentityReader>();
         services.AddScoped<ISessionLedgerWriter, SessionLedgerWriter>();
         services.AddScoped<SessionTerminator>();
+        services.AddScoped<SessionReconciler>();
+        services.AddOptions<SessionReconciliationOptions>()
+            .Bind(configuration.GetSection(SessionReconciliationOptions.SectionName))
+            .Validate(options => options.Interval >= TimeSpan.FromSeconds(1) && options.Interval <= TimeSpan.FromHours(1),
+                "SessionReconciliation:Interval must be between one second and one hour")
+            .Validate(options => options.BatchSize is >= 1 and <= 1000,
+                "SessionReconciliation:BatchSize must be between 1 and 1000")
+            .ValidateOnStart();
+        services.AddHostedService<SessionReconciliationWorker>();
 
         services.AddScoped<IResourceService, ResourceService>();
+        services.AddScoped<IAccessRequestService, AccessRequestService>();
 
         return services;
     }

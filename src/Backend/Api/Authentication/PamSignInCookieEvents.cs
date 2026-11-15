@@ -11,6 +11,8 @@ public sealed class PamSignInCookieEvents(PamSessionLifetime lifetime) : CookieA
         lifetime.Initialize(context.Properties);
         var previous = await context.HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         if (previous.Succeeded)
+        {
             await context.HttpContext.EndPamSessionAsync(SessionEndReason.Reauthentication);
+        }
     }
 }

@@ -1,3 +1,4 @@
+using Api.AccessRequests;
 using Api.Authentication;
 using Api.Errors;
 using Api.Filters;
@@ -27,6 +28,19 @@ public static class PamApplication
     public static WebApplication UsePamApi(this WebApplication app)
     {
         app.UsePamErrorHandling();
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.StartsWithSegments("/api"))
+            {
+                context.Response.OnStarting(() =>
+                {
+                    context.Response.Headers.CacheControl = "no-store";
+                    return Task.CompletedTask;
+                });
+            }
+
+            await next(context);
+        });
         app.UseAuthentication();
         app.UseAuthorization();
 
@@ -38,10 +52,15 @@ public static class PamApplication
         var api = app.MapGroup("/api").RequireAuthorization().AddEndpointFilter<AntiforgeryFilter>();
         api.MapAuthenticationEndpoints();
         api.MapResourceEndpoints();
+        api.MapAccessRequestEndpoints();
 
         if (app.Environment.IsDevelopment())
         {
             app.MapOpenApi();
+            app.UseSwaggerUI(options =>
+            {
+                options.SwaggerEndpoint("/openapi/v1.json", "PAM API");
+            });
         }
 
         return app;

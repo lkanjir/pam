@@ -1,8 +1,8 @@
 using Application.Sessions;
 using Backend.Tests.Support;
 using FakeItEasy;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 
 namespace Backend.UnitTests.Authentication;
 
@@ -39,7 +39,7 @@ public sealed class PamTicketStoreTests
         await Record.ExceptionAsync(() => fixture.Store.StoreAsync(SessionTestData.Ticket(fixture.Clock.Now)));
 
         // Assert
-        A.CallTo(() => fixture.Tickets.RemoveAsync(TicketStoreFixture.SessionId)).MustHaveHappenedOnceExactly();
+        A.CallTo(() => fixture.Tickets.DiscardUnissuedAsync(TicketStoreFixture.SessionId)).MustHaveHappenedOnceExactly();
     }
 
     [Fact]
@@ -50,7 +50,7 @@ public sealed class PamTicketStoreTests
         var original = new InvalidOperationException("Database unavailable");
         A.CallTo(() => fixture.Ledger.RecordStartedAsync(A<SessionStarted>._, A<CancellationToken>._))
             .ThrowsAsync(original);
-        A.CallTo(() => fixture.Tickets.RemoveAsync(TicketStoreFixture.SessionId))
+        A.CallTo(() => fixture.Tickets.DiscardUnissuedAsync(TicketStoreFixture.SessionId))
             .ThrowsAsync(new InvalidOperationException("Storage unavailable"));
 
         // Act
@@ -89,7 +89,7 @@ public sealed class PamTicketStoreTests
         await Record.ExceptionAsync(() => fixture.Store.StoreAsync(SessionTestData.Ticket(fixture.Clock.Now), cancellation.Token));
 
         // Assert
-        A.CallTo(() => fixture.Tickets.RemoveAsync(TicketStoreFixture.SessionId)).MustHaveHappenedOnceExactly();
+        A.CallTo(() => fixture.Tickets.DiscardUnissuedAsync(TicketStoreFixture.SessionId)).MustHaveHappenedOnceExactly();
     }
 
     [Fact]

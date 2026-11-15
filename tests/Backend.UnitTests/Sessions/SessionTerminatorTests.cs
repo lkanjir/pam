@@ -11,6 +11,26 @@ public sealed class SessionTerminatorTests
 {
     private static readonly string SessionId = new('A', 64);
 
+    [Fact]
+    public async Task EndSessionAsync_RecoveryDataMissing_DoesNotInventAnExplicitLogoutAudit()
+    {
+        // Arrange
+        var tickets = CreateTickets();
+        A.CallTo(() => tickets.EndAsync(A<PendingSessionEnd>._, A<SessionObservation?>._))
+            .Returns(Task.FromResult<PendingSessionEnd?>(null));
+        var ledger = A.Fake<ISessionLedgerWriter>();
+        var terminator = new SessionTerminator(tickets, ledger, new TestTimeProvider(), NullLogger<SessionTerminator>.Instance);
+
+        // Act
+        await terminator.EndSessionAsync(SessionId, SessionEndReason.Logout, "request-42");
+
+        // Assert
+        A.CallTo(() => ledger.RecordEndedAsync(A<string>._, A<DateTimeOffset>._, A<string>._, A<string>._,
+            A<CancellationToken>._)).MustNotHaveHappened();
+        A.CallTo(() => tickets.AcknowledgeEndAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+
     [Theory]
     [InlineData(SessionEndReason.Logout, "logout")]
     [InlineData(SessionEndReason.Reauthentication, "reauthentication")]
@@ -18,11 +38,13 @@ public sealed class SessionTerminatorTests
     public async Task EndSessionAsync_PersistsStableReasonAfterRevocation(SessionEndReason reason, string code)
     {
         // Arrange
-        var tickets = A.Fake<ISessionTicketStore>();
+        var tickets = CreateTickets();
         var ledger = A.Fake<ISessionLedgerWriter>();
         var clock = new TestTimeProvider();
         var revoked = false;
-        A.CallTo(() => tickets.RemoveAsync(SessionId)).Invokes(() => revoked = true);
+        A.CallTo(() => tickets.EndAsync(A<PendingSessionEnd>._, A<SessionObservation?>._))
+            .Invokes(() => revoked = true)
+            .ReturnsLazily((PendingSessionEnd end, SessionObservation? _) => Task.FromResult<PendingSessionEnd?>(end));
         A.CallTo(() => ledger.RecordEndedAsync(A<string>._, A<DateTimeOffset>._, A<string>._, A<string>._,
                 A<CancellationToken>._))
             .Invokes(() => Assert.True(revoked));
@@ -40,9 +62,10 @@ public sealed class SessionTerminatorTests
     public async Task EndSessionAsync_WhenRevocationFails_DoesNotRecordEnd()
     {
         // Arrange
-        var tickets = A.Fake<ISessionTicketStore>();
+        var tickets = CreateTickets();
         var ledger = A.Fake<ISessionLedgerWriter>();
         var failure = new InvalidOperationException("Storage unavailable");
+        A.CallTo(() => tickets.EndAsync(A<PendingSessionEnd>._, A<SessionObservation?>._)).ThrowsAsync(failure);
         A.CallTo(() => tickets.RemoveAsync(SessionId)).ThrowsAsync(failure);
         var terminator = new SessionTerminator(tickets, ledger, new TestTimeProvider(),
             NullLogger<SessionTerminator>.Instance);
@@ -61,7 +84,7 @@ public sealed class SessionTerminatorTests
     public async Task EndSessionAsync_WhenAuditFails_KeepsRevocationSuccessful()
     {
         // Arrange
-        var tickets = A.Fake<ISessionTicketStore>();
+        var tickets = CreateTickets();
         var ledger = A.Fake<ISessionLedgerWriter>();
         A.CallTo(() => ledger.RecordEndedAsync(A<string>._, A<DateTimeOffset>._, A<string>._, A<string>._,
             A<CancellationToken>._)).ThrowsAsync(new InvalidOperationException("Database unavailable"));
@@ -74,7 +97,8 @@ public sealed class SessionTerminatorTests
 
         // Assert
         Assert.Null(error);
-        A.CallTo(() => tickets.RemoveAsync(SessionId)).MustHaveHappenedOnceExactly();
+        A.CallTo(() => tickets.EndAsync(A<PendingSessionEnd>._, A<SessionObservation?>._)).MustHaveHappenedOnceExactly();
+        A.CallTo(() => tickets.AcknowledgeEndAsync(A<string>._)).MustNotHaveHappened();
         A.CallTo(() => tickets.StoreAsync(A<Microsoft.AspNetCore.Authentication.AuthenticationTicket>._))
             .MustNotHaveHappened();
     }
@@ -83,7 +107,7 @@ public sealed class SessionTerminatorTests
     public async Task EndSessionAsync_WithInvalidIdentifier_DoesNotTouchStorageOrLedger()
     {
         // Arrange
-        var tickets = A.Fake<ISessionTicketStore>();
+        var tickets = CreateTickets();
         var ledger = A.Fake<ISessionLedgerWriter>();
         var terminator = new SessionTerminator(tickets, ledger, new TestTimeProvider(),
             NullLogger<SessionTerminator>.Instance);
@@ -93,6 +117,7 @@ public sealed class SessionTerminatorTests
 
         // Assert
         A.CallTo(() => tickets.RemoveAsync(A<string>._)).MustNotHaveHappened();
+        A.CallTo(() => tickets.EndAsync(A<PendingSessionEnd>._, A<SessionObservation?>._)).MustNotHaveHappened();
         A.CallTo(() => ledger.RecordEndedAsync(A<string>._, A<DateTimeOffset>._, A<string>._, A<string>._,
             A<CancellationToken>._)).MustNotHaveHappened();
     }
@@ -103,7 +128,7 @@ public sealed class SessionTerminatorTests
     public async Task EndSessionAsync_WithoutCorrelation_DoesNotRevokeSession(string? correlation)
     {
         // Arrange
-        var tickets = A.Fake<ISessionTicketStore>();
+        var tickets = CreateTickets();
         var ledger = A.Fake<ISessionLedgerWriter>();
         var terminator = new SessionTerminator(tickets, ledger, new TestTimeProvider(),
             NullLogger<SessionTerminator>.Instance);
@@ -115,6 +140,15 @@ public sealed class SessionTerminatorTests
         // Assert
         Assert.IsAssignableFrom<ArgumentException>(error);
         A.CallTo(() => tickets.RemoveAsync(A<string>._)).MustNotHaveHappened();
+        A.CallTo(() => tickets.EndAsync(A<PendingSessionEnd>._, A<SessionObservation?>._)).MustNotHaveHappened();
+    }
+
+    private static ISessionTicketStore CreateTickets()
+    {
+        var tickets = A.Fake<ISessionTicketStore>();
+        A.CallTo(() => tickets.EndAsync(A<PendingSessionEnd>._, A<SessionObservation?>._))
+            .ReturnsLazily((PendingSessionEnd end, SessionObservation? _) => Task.FromResult<PendingSessionEnd?>(end));
+        return tickets;
     }
 
 }

@@ -1,3 +1,4 @@
+using Application.Common.Diagnostics;
 using Application.Sessions;
 using Infrastructure.Authentication;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,14 @@ public sealed class SessionTerminator(
     TimeProvider timeProvider,
     ILogger<SessionTerminator> logger)
 {
+    private static readonly Action<ILogger, string, string, string, string?, string, Exception?> LogSessionEndFailure =
+        LoggerMessage.Define<string, string, string, string?, string>(
+            LogLevel.Error,
+            new EventId(0),
+            "Session was revoked; its ledger/audit completion will be retried. " +
+            "Session hash: {SessionIdHash}; correlation: {CorrelationId}; error type: {ErrorType}; "
+            + "database code: {DatabaseCode}; location: {ErrorLocation}.");
+
     public async Task EndSessionAsync(string sessionId, SessionEndReason reason, string correlationId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(correlationId);
@@ -20,25 +29,51 @@ public sealed class SessionTerminator(
             return;
         }
 
-        await ticketStore.RemoveAsync(sessionId);
         string sessionIdHash = SessionIdentifier.Hash(sessionId);
+        PendingSessionEnd? end;
         try
         {
+            end = await ticketStore.EndAsync(new PendingSessionEnd(sessionIdHash,
+                timeProvider.GetUtcNow(), reasonCode, correlationId));
+        }
+        catch
+        {
+            // If recovery metadata cannot be retained, still attempt the security-critical revocation.
+            await ticketStore.RemoveAsync(sessionId);
+            throw;
+        }
+
+        if (end is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (end.ExpectedExpiresAt is { } expiry)
+            {
+                await ledgerWriter.RecordRenewedAsync(sessionIdHash, expiry, CancellationToken.None);
+            }
+
             await ledgerWriter.RecordEndedAsync(
                 sessionIdHash,
-                timeProvider.GetUtcNow(),
-                reasonCode,
-                correlationId,
+                end.EndedAt,
+                end.Reason,
+                end.CorrelationId,
                 CancellationToken.None);
+            await ticketStore.AcknowledgeEndAsync(sessionIdHash);
         }
         catch (Exception exception)
         {
-            logger.LogError(
-                "Session was revoked, but its ledger/audit end could not be persisted. " +
-                "Session hash: {SessionIdHash}; correlation: {CorrelationId}; error type: {ErrorType}.",
+            var diagnostic = ExceptionDiagnostics.Capture(exception);
+            LogSessionEndFailure(
+                logger,
                 sessionIdHash,
                 correlationId,
-                exception.GetType().Name);
+                diagnostic.ErrorType,
+                diagnostic.DatabaseCode,
+                diagnostic.Location,
+                null);
         }
     }
 }

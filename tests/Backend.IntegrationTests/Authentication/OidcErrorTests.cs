@@ -13,15 +13,14 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Backend.IntegrationTests.Authentication;
@@ -108,7 +107,8 @@ public sealed class OidcErrorTests
 
         // Assert
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        Assert.Contains(response.Headers.GetValues("Set-Cookie"), cookie => cookie.StartsWith("pam.session="));
+        Assert.Contains(response.Headers.GetValues("Set-Cookie"),
+            cookie => cookie.StartsWith("pam.session=", StringComparison.Ordinal));
         A.CallTo(() => host.Tickets.StoreAsync(A<AuthenticationTicket>._, A<HttpContext>._,
             A<CancellationToken>._)).MustHaveHappenedOnceExactly();
     }
@@ -128,7 +128,7 @@ public sealed class OidcErrorTests
     private static void AssertNoSession(OidcHost host, HttpResponseMessage response)
     {
         Assert.DoesNotContain(response.Headers.TryGetValues("Set-Cookie", out var cookies) ? cookies : [],
-            cookie => cookie.StartsWith("pam.session="));
+            cookie => cookie.StartsWith("pam.session=", StringComparison.Ordinal));
         A.CallTo(() => host.Tickets.StoreAsync(A<AuthenticationTicket>._, A<HttpContext>._,
             A<CancellationToken>._)).MustNotHaveHappened();
     }
@@ -229,7 +229,10 @@ public sealed class OidcErrorTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (request.RequestUri!.AbsolutePath != "/realms/pam/token")
+            {
                 throw new InvalidOperationException("Unexpected test IdP request.");
+            }
+
             var now = DateTime.UtcNow;
             var token = new JwtSecurityToken(OidcHost.Issuer, "test-bff",
                 [new Claim("sub", "ana"), new Claim("nonce", Nonce)],

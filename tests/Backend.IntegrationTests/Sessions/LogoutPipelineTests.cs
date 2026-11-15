@@ -1,9 +1,9 @@
 using System.Net;
-using Microsoft.AspNetCore.Builder;
 using System.Net.Http.Json;
 using Api.Authentication;
 using Backend.IntegrationTests.Fixtures;
 using Backend.Tests.Support;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using static Backend.IntegrationTests.Sessions.SessionTestHost;
@@ -47,7 +47,9 @@ public sealed class LogoutPipelineTests(PostgresFixture postgres, RedisFixture r
         antiforgery.EnsureSuccessStatusCode();
         UpdateCookie(client, antiforgery);
         if (token is not null)
+        {
             client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", token);
+        }
 
         // Act
         using var response = await client.PostAsync("/api/auth/logout", null);
@@ -82,7 +84,10 @@ public sealed class LogoutPipelineTests(PostgresFixture postgres, RedisFixture r
         UpdateCookie(client, antiforgery);
         client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", token!.RequestToken);
         if (auditFails)
+        {
             await RejectLogoutAuditAsync(database);
+        }
+
         clock.Now = clock.Now.AddMinutes(16); // Logout must suppress pending sliding renewal.
 
         // Act
@@ -91,7 +96,8 @@ public sealed class LogoutPipelineTests(PostgresFixture postgres, RedisFixture r
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.True(response.Headers.CacheControl?.NoStore);
-        Assert.Contains(response.Headers.GetValues("Set-Cookie"), value => value.StartsWith("pam.session=;"));
+        Assert.Contains(response.Headers.GetValues("Set-Cookie"),
+            value => value.StartsWith("pam.session=;", StringComparison.Ordinal));
         Assert.False(await redis.Connection.GetDatabase().KeyExistsAsync("pam:session:" + hash));
         if (!auditFails)
         {
@@ -114,7 +120,10 @@ public sealed class LogoutPipelineTests(PostgresFixture postgres, RedisFixture r
             redis.Connection, application => application.Use(async (context, next) =>
             {
                 if (context.Request.Path == "/api/auth/logout")
+                {
                     context.TraceIdentifier = "logout-http-request";
+                }
+
                 await next(context);
             }));
         using var client = app.GetTestClient();

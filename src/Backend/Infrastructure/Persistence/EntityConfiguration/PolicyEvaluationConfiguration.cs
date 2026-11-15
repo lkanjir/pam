@@ -21,7 +21,7 @@ public sealed class PolicyEvaluationConfiguration : IEntityTypeConfiguration<Pol
         builder.HasIndex(e => e.PublicId).IsUnique();
         builder.HasIndex(e => e.RequestId).IsUnique();
 
-        builder.HasOne<AccessRequest>()
+        builder.HasOne(e => e.Request)
                .WithMany()
                .HasForeignKey(e => e.RequestId)
                .OnDelete(DeleteBehavior.Restrict);

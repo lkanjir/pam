@@ -26,4 +26,5 @@ public sealed class AuditEvent
     public string? Metadata { get; init; }
 
     public ManagedResource? Resource { get; init; }
+    public AccessRequest? Request { get; init; }
 }

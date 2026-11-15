@@ -7,7 +7,7 @@ public class PamDbContextFactory : IDesignTimeDbContextFactory<PamDbContext>
 {
     public PamDbContext CreateDbContext(string[] args)
     {
-        // Used only to generate migrations. Applying them belongs to Migrator.
+        // Generation only. Dev uses Migrator; production admins apply reviewed SQL.
         const string connectionString = "Host=localhost;Port=1;Database=design_only;Username=design_only";
         var options = new DbContextOptionsBuilder<PamDbContext>().UseNpgsql(connectionString)
             .UseSnakeCaseNamingConvention().Options;

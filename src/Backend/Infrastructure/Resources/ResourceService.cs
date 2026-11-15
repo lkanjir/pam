@@ -23,7 +23,8 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
                 resource.Environment,
                 resource.IsActive,
                 resource.CreatedAt,
-                resource.ModifiedAt))
+                resource.ModifiedAt)
+            { Version = resource.Version })
             .SingleOrDefaultAsync(cancellationToken);
     }
 
@@ -66,11 +67,12 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
             resource.ModifiedAt);
     }
 
-    public async Task<ResourceResponse?> UpdateAsync(
+    public async Task<ResourceWriteResult> UpdateAsync(
         Guid publicId,
         UpdateResourceRequest request,
         PrincipalSnapshot actor,
         string correlationId,
+        uint expectedVersion,
         CancellationToken cancellationToken = default)
     {
         var resource = await dbContext.ManagedResources
@@ -78,7 +80,12 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
 
         if (resource is null)
         {
-            return null;
+            return new(ResourceWriteKind.NotFound);
+        }
+
+        if (resource.Version != expectedVersion)
+        {
+            return new(ResourceWriteKind.Conflict);
         }
 
         var now = timeProvider.GetUtcNow();
@@ -89,13 +96,21 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
         resource.IsActive = request.IsActive;
         resource.ModifiedAt = now.UtcDateTime;
         resource.ModifiedByPrincipalId = actor.Id;
+        dbContext.Entry(resource).Property(item => item.ModifiedAt).IsModified = true;
 
         dbContext.AuditEvents.Add(CreateAuditEvent(
             "resource.updated", resource, actor, now.UtcDateTime, correlationId));
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return new(ResourceWriteKind.Conflict);
+        }
 
-        return new ResourceResponse(
+        return new(ResourceWriteKind.Succeeded, new ResourceResponse(
             resource.PublicId,
             resource.Name,
             resource.Description,
@@ -103,13 +118,17 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
             resource.Environment,
             resource.IsActive,
             resource.CreatedAt,
-            resource.ModifiedAt);
+            resource.ModifiedAt)
+        {
+            Version = resource.Version
+        });
     }
 
-    public async Task<bool> DeleteAsync(
+    public async Task<ResourceWriteKind> DeleteAsync(
         Guid publicId,
         PrincipalSnapshot actor,
         string correlationId,
+        uint expectedVersion,
         CancellationToken cancellationToken = default)
     {
         var resource = await dbContext.ManagedResources
@@ -117,7 +136,12 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
 
         if (resource is null)
         {
-            return false;
+            return ResourceWriteKind.NotFound;
+        }
+
+        if (resource.Version != expectedVersion)
+        {
+            return ResourceWriteKind.Conflict;
         }
 
         var now = timeProvider.GetUtcNow();
@@ -129,9 +153,16 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
         dbContext.AuditEvents.Add(CreateAuditEvent(
             "resource.deleted", resource, actor, now.UtcDateTime, correlationId));
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return ResourceWriteKind.Conflict;
+        }
 
-        return true;
+        return ResourceWriteKind.Succeeded;
     }
 
     public async Task<CursorPage<ResourceResponse>> ListAsync(
@@ -165,6 +196,64 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
 
         bool hasNextPage = items.Count > limit;
 
+        if (hasNextPage)
+        {
+            items.RemoveAt(limit);
+        }
+
+        string? nextCursor = hasNextPage
+            ? CursorCodec.Encode(new ResourceCursor(items[^1].Id))
+            : null;
+
+        return new CursorPage<ResourceResponse>(items, nextCursor);
+    }
+
+    public async Task<CursorPage<ResourceResponse>> ListRequestableAsync(
+        long principalId,
+        int limit,
+        ResourceCursor? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        var entitlements = dbContext.Entitlements.Where(entitlement => entitlement.IsActive
+            && entitlement.EligibilityRules.Any(rule => rule.PrincipalId == principalId && rule.IsEnabled));
+
+        var resources = dbContext.ManagedResources.Where(resource => resource.IsActive
+            && entitlements.Any(entitlement => entitlement.ResourceId == resource.Id));
+
+        if (cursor is not null)
+        {
+            Guid lastPublicId = cursor.LastPublicId;
+            resources = resources.Where(resource => resource.PublicId.CompareTo(lastPublicId) > 0);
+        }
+
+        var items = await resources
+            .OrderBy(resource => resource.PublicId)
+            .Take(limit + 1)
+            .Select(resource => new ResourceResponse(
+                resource.PublicId,
+                resource.Name,
+                resource.Description,
+                resource.ResourceType,
+                resource.Environment,
+                resource.IsActive,
+                resource.CreatedAt,
+                resource.ModifiedAt)
+            {
+                Entitlements = entitlements
+                    .Where(entitlement => entitlement.ResourceId == resource.Id)
+                    .OrderBy(entitlement => entitlement.PublicId)
+                    .Select(entitlement => new RequestableEntitlementResponse(
+                        entitlement.PublicId,
+                        entitlement.Code,
+                        entitlement.Name,
+                        entitlement.MaxDurationMinutes,
+                        entitlement.RequiresApproval,
+                        entitlement.RequiresTicket))
+                    .ToList()
+            })
+            .ToListAsync(cancellationToken);
+
+        bool hasNextPage = items.Count > limit;
         if (hasNextPage)
         {
             items.RemoveAt(limit);

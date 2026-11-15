@@ -13,20 +13,28 @@ public interface IResourceService
         string correlationId,
         CancellationToken cancellationToken = default);
 
-    Task<ResourceResponse?> UpdateAsync(
+    Task<ResourceWriteResult> UpdateAsync(
         Guid publicId,
         UpdateResourceRequest request,
         PrincipalSnapshot actor,
         string correlationId,
+        uint expectedVersion,
         CancellationToken cancellationToken = default);
 
-    Task<bool> DeleteAsync(
+    Task<ResourceWriteKind> DeleteAsync(
         Guid publicId,
         PrincipalSnapshot actor,
         string correlationId,
+        uint expectedVersion,
         CancellationToken cancellationToken = default);
 
     Task<CursorPage<ResourceResponse>> ListAsync(
+        int limit,
+        ResourceCursor? cursor,
+        CancellationToken cancellationToken = default);
+
+    Task<CursorPage<ResourceResponse>> ListRequestableAsync(
+        long principalId,
         int limit,
         ResourceCursor? cursor,
         CancellationToken cancellationToken = default);

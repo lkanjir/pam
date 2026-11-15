@@ -4,7 +4,9 @@ public enum SessionEndReason
 {
     Logout,
     Reauthentication,
-    AccessChanged
+    AccessChanged,
+    Expired,
+    SessionLost
 }
 
 public static class SessionEndReasonExtensions
@@ -15,6 +17,8 @@ public static class SessionEndReasonExtensions
         SessionEndReason.Logout => "logout",
         SessionEndReason.Reauthentication => "reauthentication",
         SessionEndReason.AccessChanged => "access_changed",
+        SessionEndReason.Expired => "expired",
+        SessionEndReason.SessionLost => "session_lost",
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Unknown session end reason.")
     };
 }
