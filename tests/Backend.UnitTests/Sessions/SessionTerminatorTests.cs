@@ -11,6 +11,26 @@ public sealed class SessionTerminatorTests
 {
     private static readonly string SessionId = new('A', 64);
 
+    [Fact]
+    public async Task EndSessionAsync_RecoveryDataMissing_DoesNotInventAnExplicitLogoutAudit()
+    {
+        // Arrange
+        var tickets = CreateTickets();
+        A.CallTo(() => tickets.EndAsync(A<PendingSessionEnd>._, A<SessionObservation?>._))
+            .Returns(Task.FromResult<PendingSessionEnd?>(null));
+        var ledger = A.Fake<ISessionLedgerWriter>();
+        var terminator = new SessionTerminator(tickets, ledger, new TestTimeProvider(), NullLogger<SessionTerminator>.Instance);
+
+        // Act
+        await terminator.EndSessionAsync(SessionId, SessionEndReason.Logout, "request-42");
+
+        // Assert
+        A.CallTo(() => ledger.RecordEndedAsync(A<string>._, A<DateTimeOffset>._, A<string>._, A<string>._,
+            A<CancellationToken>._)).MustNotHaveHappened();
+        A.CallTo(() => tickets.AcknowledgeEndAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+
     [Theory]
     [InlineData(SessionEndReason.Logout, "logout")]
     [InlineData(SessionEndReason.Reauthentication, "reauthentication")]
