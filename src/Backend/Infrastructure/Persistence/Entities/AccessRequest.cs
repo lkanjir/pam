@@ -31,6 +31,7 @@ public sealed class AccessRequest
     public Principal RequesterPrincipal { get; set; } = null!;
     public Entitlement Entitlement { get; set; } = null!;
 
+    /// <summary>Guards lifecycle changes; the caller supplies authorization and atomic audit persistence.</summary>
     public void TransitionTo(AccessRequestState next)
     {
         if (!AccessRequestStates.Parse(State).CanTransitionTo(next))
