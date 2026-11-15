@@ -16,6 +16,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using StackExchange.Redis;
 
 namespace Infrastructure;
@@ -70,7 +71,14 @@ public static class ServiceCollectionExtensions
             return ConnectionMultiplexer.Connect(redisConfiguration);
         });
 
-        services.AddSingleton<ISessionTicketStore, RedisTicketStore>();
+        services.AddSingleton<ISessionTicketStore>(serviceProvider =>
+        {
+            var database = new NpgsqlConnectionStringBuilder(
+                serviceProvider.GetRequiredService<IOptions<DatabaseOptions>>().Value.ConnectionString);
+            return new RedisTicketStore(serviceProvider.GetRequiredService<IConnectionMultiplexer>(),
+                serviceProvider.GetRequiredService<IDataProtectionProvider>(),
+                serviceProvider.GetRequiredService<TimeProvider>(), database.Database);
+        });
 
         services.AddDataProtection().SetApplicationName("pam");
         services.AddOptions<KeyManagementOptions>().Configure<IConnectionMultiplexer>((options, redis) =>

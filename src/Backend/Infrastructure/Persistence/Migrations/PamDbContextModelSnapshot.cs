@@ -71,6 +71,7 @@ namespace Infrastructure.Persistence.Migrations
                         .HasColumnName("requester_principal_id");
 
                     b.Property<string>("State")
+                        .IsConcurrencyToken()
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("state");
@@ -296,6 +297,10 @@ namespace Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_authentication_session_ledger");
+
+                    b.HasIndex("Id")
+                        .HasDatabaseName("ix_authentication_session_ledger_open_id")
+                        .HasFilter("ended_at IS NULL");
 
                     b.HasIndex("PrincipalId")
                         .HasDatabaseName("ix_authentication_session_ledger_principal_id");

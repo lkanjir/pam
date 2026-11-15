@@ -16,6 +16,6 @@ public interface ISessionTicketStore
     Task DiscardUnissuedAsync(string key);
     Task<SessionObservation> ObserveAsync(string sessionIdHash);
     Task<PendingSessionEnd?> EndAsync(PendingSessionEnd completion, SessionObservation? expected = null);
-    Task<IReadOnlyList<PendingSessionEnd>> ReadPendingEndsAsync(int limit);
+    Task<IReadOnlyList<PendingSessionEnd>> ReadPendingEndsAsync(int limit, CancellationToken cancellationToken = default);
     Task AcknowledgeEndAsync(string sessionIdHash);
 }

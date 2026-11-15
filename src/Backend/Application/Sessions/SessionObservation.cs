@@ -8,4 +8,5 @@ public sealed record SessionObservation(
     string? LeaseVersion)
 {
     public PendingSessionEnd? PendingEnd { get; init; }
+    public string? TicketVersion { get; init; }
 }
