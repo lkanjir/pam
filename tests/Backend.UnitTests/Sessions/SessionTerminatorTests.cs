@@ -11,6 +11,120 @@ public sealed class SessionTerminatorTests
 {
     private static readonly string SessionId = new('A', 64);
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Reauthenticate_ObservedActiveSession_ClosesBeforeAuditAndRetainsFailedCompletion(bool auditFails)
+    {
+        // Arrange
+        var tickets = CreateTickets();
+        var ledger = A.Fake<ISessionLedgerWriter>();
+        var clock = new TestTimeProvider();
+        string hash = SessionIdentifier.Hash(SessionId);
+        var observed = new SessionObservation(true, clock.Now.AddMinutes(30), clock.Now.AddMinutes(30), "lease");
+        bool revoked = false;
+        bool completionSawRevocation = false;
+        A.CallTo(() => tickets.EndAsync(A<PendingSessionEnd>._, A<SessionObservation?>._))
+            .Invokes(() => revoked = true)
+            .ReturnsLazily((PendingSessionEnd end, SessionObservation? _) => Task.FromResult<PendingSessionEnd?>(end));
+        A.CallTo(() => ledger.RecordEndedAsync(A<string>._, A<DateTimeOffset>._, A<string>._, A<string>._,
+            A<CancellationToken>._)).ReturnsLazily(() =>
+            {
+                completionSawRevocation = revoked;
+                return auditFails ? Task.FromException(new InvalidOperationException("storage unavailable")) : Task.CompletedTask;
+            });
+        var terminator = new SessionTerminator(tickets, ledger, clock, NullLogger<SessionTerminator>.Instance);
+
+        // Act
+        bool ended = await terminator.TryEndForReauthenticationAsync(hash, observed, "reauth-flow");
+
+        // Assert
+        Assert.True(ended);
+        Assert.True(completionSawRevocation);
+        A.CallTo(() => tickets.EndAsync(A<PendingSessionEnd>.That.Matches(e => e.SessionIdHash == hash
+            && e.Reason == "reauthentication" && e.EndedAt == clock.Now && e.CorrelationId == "reauth-flow"), observed))
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => ledger.RecordEndedAsync(hash, clock.Now, "reauthentication", "reauth-flow", CancellationToken.None))
+            .MustHaveHappenedOnceExactly();
+        if (auditFails)
+        {
+            A.CallTo(() => tickets.AcknowledgeEndAsync(hash)).MustNotHaveHappened();
+        }
+        else
+        {
+            A.CallTo(() => tickets.AcknowledgeEndAsync(hash)).MustHaveHappenedOnceExactly();
+        }
+        A.CallTo(() => tickets.RemoveAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("expired")]
+    [InlineData("unknown-expiry")]
+    [InlineData("already-ended")]
+    public async Task Reauthenticate_ObservationNoLongerAuthorizesSession_DoesNotAttemptEndOrAudit(string scenario)
+    {
+        // Arrange
+        var tickets = CreateTickets();
+        var ledger = A.Fake<ISessionLedgerWriter>();
+        var clock = new TestTimeProvider();
+        string hash = SessionIdentifier.Hash(SessionId);
+        var observed = new SessionObservation(scenario != "missing",
+            scenario == "unknown-expiry" ? null : scenario == "expired" ? clock.Now : clock.Now.AddMinutes(30), null, null)
+        {
+            PendingEnd = scenario == "already-ended" ? new PendingSessionEnd(hash, clock.Now, "logout", "old") : null
+        };
+        var terminator = new SessionTerminator(tickets, ledger, clock, NullLogger<SessionTerminator>.Instance);
+
+        // Act
+        bool ended = await terminator.TryEndForReauthenticationAsync(hash, observed, "reauth-flow");
+
+        // Assert
+        Assert.False(ended);
+        A.CallTo(() => tickets.EndAsync(A<PendingSessionEnd>._, A<SessionObservation?>._)).MustNotHaveHappened();
+        A.CallTo(() => ledger.RecordEndedAsync(A<string>._, A<DateTimeOffset>._, A<string>._, A<string>._,
+            A<CancellationToken>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Reauthenticate_AnotherEndWonComparison_DoesNotIssueAnAuditOrDeleteAnotherTicket()
+    {
+        // Arrange
+        var tickets = CreateTickets();
+        A.CallTo(() => tickets.EndAsync(A<PendingSessionEnd>._, A<SessionObservation?>._))
+            .Returns(Task.FromResult<PendingSessionEnd?>(null));
+        var ledger = A.Fake<ISessionLedgerWriter>();
+        var clock = new TestTimeProvider();
+        var terminator = new SessionTerminator(tickets, ledger, clock, NullLogger<SessionTerminator>.Instance);
+        var observed = new SessionObservation(true, clock.Now.AddMinutes(30), null, null);
+
+        // Act
+        bool ended = await terminator.TryEndForReauthenticationAsync(SessionIdentifier.Hash(SessionId), observed, "reauth-flow");
+
+        // Assert
+        Assert.False(ended);
+        A.CallTo(() => ledger.RecordEndedAsync(A<string>._, A<DateTimeOffset>._, A<string>._, A<string>._,
+            A<CancellationToken>._)).MustNotHaveHappened();
+        A.CallTo(() => tickets.RemoveAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    [Fact]
+    public async Task Reauthenticate_PreCancelled_DoesNotTouchStorage()
+    {
+        // Arrange
+        var tickets = CreateTickets();
+        var clock = new TestTimeProvider();
+        var terminator = new SessionTerminator(tickets, A.Fake<ISessionLedgerWriter>(), clock, NullLogger<SessionTerminator>.Instance);
+        var observed = new SessionObservation(true, clock.Now.AddMinutes(30), null, null);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        // Act / Assert
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            terminator.TryEndForReauthenticationAsync(SessionIdentifier.Hash(SessionId), observed, "reauth-flow", cancellation.Token));
+        A.CallTo(() => tickets.EndAsync(A<PendingSessionEnd>._, A<SessionObservation?>._)).MustNotHaveHappened();
+    }
+
     [Fact]
     public async Task EndSessionAsync_RecoveryDataMissing_DoesNotInventAnExplicitLogoutAudit()
     {

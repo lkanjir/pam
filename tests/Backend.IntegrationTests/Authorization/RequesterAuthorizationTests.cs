@@ -3,11 +3,11 @@ using System.Net.Http.Json;
 using Application.AccessRequests;
 using Application.Common.Pagination;
 using Application.Sessions;
-using Infrastructure.AccessRequests;
-using Microsoft.EntityFrameworkCore;
 using Backend.IntegrationTests.Fixtures;
 using Backend.IntegrationTests.Resources;
+using Infrastructure.AccessRequests;
 using Infrastructure.Persistence.Entities;
+using Microsoft.EntityFrameworkCore;
 using static Backend.IntegrationTests.AccessRequests.AccessRequestTestData;
 
 namespace Backend.IntegrationTests.Authorization;
