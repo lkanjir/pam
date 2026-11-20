@@ -16,6 +16,10 @@ public sealed class ResourceWriteAuthorizationTests(PostgresFixture postgres, Re
     [Theory]
     [InlineData("post", "admin", 201)]
     [InlineData("put", "admin", 200)]
+    [InlineData("delete", "admin", 204)]
+    [InlineData("delete", "user", 403)]
+    [InlineData("delete", "approver", 403)]
+    [InlineData("delete", "", 403)]
     [InlineData("put", "user", 403)]
     [InlineData("put", "approver", 403)]
     [InlineData("put", "", 403)]
@@ -32,7 +36,7 @@ public sealed class ResourceWriteAuthorizationTests(PostgresFixture postgres, Re
         await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection,
             roles: roles.Split(',', StringSplitOptions.RemoveEmptyEntries));
         await test.AuthenticateAsync(includeResourceVersion: false);
-        if (method == "put" && roles.Split(',').Contains("admin", StringComparer.Ordinal))
+        if (method != "post" && roles.Split(',').Contains("admin", StringComparer.Ordinal))
         {
             await test.RefreshVersionAsync();
         }
@@ -42,9 +46,9 @@ public sealed class ResourceWriteAuthorizationTests(PostgresFixture postgres, Re
 
         // Assert
         Assert.Equal(status, (int)response.StatusCode);
-        Assert.Equal(status == 201 ? 2 : 1, await test.Database.Context.ManagedResources.CountAsync());
+        Assert.Equal(method == "delete" && status == 204 ? 0 : status == 201 ? 2 : 1, await test.Database.Context.ManagedResources.CountAsync());
         Assert.Equal(status < 300 ? 1 : 0,
-            await test.Database.Context.AuditEvents.CountAsync(value => value.EventType == (method == "post" ? "resource.created" : "resource.updated")));
+            await test.Database.Context.AuditEvents.CountAsync(value => value.EventType == EventFor(method)));
         Assert.Equal(0, await test.Database.Context.EligibilityRules.CountAsync());
         Assert.Equal(method == "put" && status == 200 ? "New target" : "Original target", (await test.ReadResourceAsync()).Name);
     }
@@ -52,6 +56,9 @@ public sealed class ResourceWriteAuthorizationTests(PostgresFixture postgres, Re
     [Theory]
     [InlineData("post", true, 600, 201)]
     [InlineData("put", true, 600, 200)]
+    [InlineData("delete", true, 600, 204)]
+    [InlineData("delete", true, 601, 403)]
+    [InlineData("delete", false, 0, 403)]
     [InlineData("put", true, 601, 403)]
     [InlineData("put", false, 0, 403)]
     [InlineData("post", true, 601, 403)]
@@ -75,23 +82,29 @@ public sealed class ResourceWriteAuthorizationTests(PostgresFixture postgres, Re
             Assert.Equal("recent_auth_required", problem.RootElement.GetProperty("code").GetString());
             Assert.Equal(1, await test.Database.Context.ManagedResources.CountAsync());
             Assert.Equal("Original target", (await test.ReadResourceAsync()).Name);
-            Assert.False(await test.Database.Context.AuditEvents.AnyAsync(value => value.EventType == (method == "post" ? "resource.created" : "resource.updated")));
+            Assert.False(await test.Database.Context.AuditEvents.AnyAsync(value => value.EventType == EventFor(method)));
         }
     }
 
     [Theory]
     [InlineData("post", "revoked-role", ResourceWriteKind.Forbidden)]
     [InlineData("put", "revoked-role", ResourceWriteKind.Forbidden)]
+    [InlineData("delete", "revoked-role", ResourceWriteKind.Forbidden)]
     [InlineData("post", "disabled", ResourceWriteKind.Forbidden)]
     [InlineData("put", "disabled", ResourceWriteKind.Forbidden)]
+    [InlineData("delete", "disabled", ResourceWriteKind.Forbidden)]
     [InlineData("post", "forged-subject", ResourceWriteKind.Forbidden)]
     [InlineData("put", "forged-subject", ResourceWriteKind.Forbidden)]
+    [InlineData("delete", "forged-subject", ResourceWriteKind.Forbidden)]
     [InlineData("post", "forged-public-id", ResourceWriteKind.Forbidden)]
     [InlineData("put", "forged-public-id", ResourceWriteKind.Forbidden)]
+    [InlineData("delete", "forged-public-id", ResourceWriteKind.Forbidden)]
     [InlineData("post", "stale-auth", ResourceWriteKind.RecentAuthenticationRequired)]
     [InlineData("put", "stale-auth", ResourceWriteKind.RecentAuthenticationRequired)]
+    [InlineData("delete", "stale-auth", ResourceWriteKind.RecentAuthenticationRequired)]
     [InlineData("post", "missing-auth", ResourceWriteKind.RecentAuthenticationRequired)]
     [InlineData("put", "missing-auth", ResourceWriteKind.RecentAuthenticationRequired)]
+    [InlineData("delete", "missing-auth", ResourceWriteKind.RecentAuthenticationRequired)]
     public async Task Write_DirectServiceCaller_CannotBypassCurrentIdentityCapabilityOrFreshness(string method, string change, ResourceWriteKind expected)
     {
         // Arrange
@@ -126,9 +139,12 @@ public sealed class ResourceWriteAuthorizationTests(PostgresFixture postgres, Re
 
         // Act
         var actor = new AdministrativeActor(snapshot, authenticatedAt);
-        var result = method == "post"
-            ? await service.CreateAsync(Payload(), actor, "direct-call")
-            : await service.UpdateAsync(test.Resource.PublicId, UpdatePayload(), actor, "direct-call", test.Resource.Version);
+        var result = method switch
+        {
+            "post" => await service.CreateAsync(Payload(), actor, "direct-call"),
+            "put" => await service.UpdateAsync(test.Resource.PublicId, UpdatePayload(), actor, "direct-call", test.Resource.Version),
+            _ => new ResourceWriteResult(await service.DeleteAsync(test.Resource.PublicId, actor, "direct-call", test.Resource.Version))
+        };
 
         // Assert
         Assert.Equal(expected, result.Kind);
@@ -138,9 +154,19 @@ public sealed class ResourceWriteAuthorizationTests(PostgresFixture postgres, Re
         Assert.Empty(await test.Database.Context.AuditEvents.ToListAsync());
     }
 
-    private static Task<HttpResponseMessage> WriteAsync(ResourceTestContext test, string method) => method == "post"
-        ? test.Client.PostAsJsonAsync("/api/resources", Payload())
-        : test.Client.PutAsJsonAsync(test.ResourceUrl, UpdatePayload());
+    private static Task<HttpResponseMessage> WriteAsync(ResourceTestContext test, string method) => method switch
+    {
+        "post" => test.Client.PostAsJsonAsync("/api/resources", Payload()),
+        "put" => test.Client.PutAsJsonAsync(test.ResourceUrl, UpdatePayload()),
+        _ => test.Client.DeleteAsync(test.ResourceUrl)
+    };
+
+    private static string EventFor(string method) => method switch
+    {
+        "post" => "resource.created",
+        "put" => "resource.updated",
+        _ => "resource.deleted"
+    };
 
     private static UpdateResourceRequest UpdatePayload() => new() { Name = "New target", ResourceType = "linux", Environment = "dev", IsActive = true };
 
