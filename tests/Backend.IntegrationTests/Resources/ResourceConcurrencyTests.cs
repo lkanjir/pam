@@ -76,7 +76,8 @@ public sealed class ResourceConcurrencyTests(PostgresFixture postgres, RedisFixt
         var updateService = new ResourceService(updateContext, test.Clock);
 
         // Act
-        var deletion = deletionService.DeleteAsync(test.Resource.PublicId, actor, "delete", test.Resource.Version);
+        var deletion = deletionService.DeleteAsync(test.Resource.PublicId,
+            new AdministrativeActor(actor, test.Clock.Now), "delete", test.Resource.Version);
         var update = updateService.UpdateAsync(test.Resource.PublicId, Payload("Changed"),
             new AdministrativeActor(actor, test.Clock.Now), "update", test.Resource.Version);
         await Task.WhenAll(deletion, update);

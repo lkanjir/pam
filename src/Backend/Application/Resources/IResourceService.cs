@@ -1,6 +1,5 @@
 using Application.Authorization;
 using Application.Common.Pagination;
-using Application.Sessions;
 
 namespace Application.Resources;
 
@@ -24,7 +23,7 @@ public interface IResourceService
 
     Task<ResourceWriteKind> DeleteAsync(
         Guid publicId,
-        PrincipalSnapshot actor,
+        AdministrativeActor actor,
         string correlationId,
         uint expectedVersion,
         CancellationToken cancellationToken = default);

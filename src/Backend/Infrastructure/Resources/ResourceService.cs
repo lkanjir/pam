@@ -149,11 +149,20 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
 
     public async Task<ResourceWriteKind> DeleteAsync(
         Guid publicId,
-        PrincipalSnapshot actor,
+        AdministrativeActor actor,
         string correlationId,
         uint expectedVersion,
         CancellationToken cancellationToken = default)
     {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var authorization = await AdministrativeAuthorization.CheckAsync(
+            dbContext, timeProvider, actor, PamPermissions.ResourcesManage, cancellationToken);
+        if (authorization != AdministrativeDecision.Allowed)
+        {
+            return authorization == AdministrativeDecision.Forbidden
+                ? ResourceWriteKind.Forbidden : ResourceWriteKind.RecentAuthenticationRequired;
+        }
+
         var resource = await dbContext.ManagedResources
             .SingleOrDefaultAsync(resource => resource.PublicId == publicId, cancellationToken);
 
@@ -171,10 +180,10 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
         resource.DeletedAt = now.UtcDateTime;
         resource.IsActive = false;
         resource.ModifiedAt = now.UtcDateTime;
-        resource.ModifiedByPrincipalId = actor.Id;
+        resource.ModifiedByPrincipalId = actor.Principal.Id;
 
         dbContext.AuditEvents.Add(CreateAuditEvent(
-            "resource.deleted", resource, actor, now.UtcDateTime, correlationId));
+            "resource.deleted", resource, actor.Principal, now.UtcDateTime, correlationId));
 
         try
         {
@@ -185,6 +194,7 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
             return ResourceWriteKind.Conflict;
         }
 
+        await transaction.CommitAsync(cancellationToken);
         return ResourceWriteKind.Succeeded;
     }
 

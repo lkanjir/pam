@@ -46,9 +46,13 @@ public static class ResourceEndpoints
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
         resources.MapDelete("/{id:guid}", Delete).WithResourceVersion()
+            .RequireAuthorization(PamPermissions.ResourcesManage, PamPolicies.RecentAuthentication)
+            .WithName("Resource.Delete")
+            .WithSummary("Retire a managed resource")
             .WithDescription("Requires one strong ETag in If-Match. Missing preconditions return 428; "
                 + "a stale version or concurrent write returns 412 without deleting or auditing the resource.")
             .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
 
@@ -234,10 +238,17 @@ public static class ResourceEndpoints
 
         var result = await resourceService.DeleteAsync(
             id,
-            actor,
+            new AdministrativeActor(actor, PamAuthenticationTime.Read(context.User)),
             context.TraceIdentifier,
             version,
             cancellationToken);
+
+        if (result is ResourceWriteKind.Forbidden or ResourceWriteKind.RecentAuthenticationRequired)
+        {
+            return TypedResults.Problem(statusCode: StatusCodes.Status403Forbidden,
+                extensions: result == ResourceWriteKind.RecentAuthenticationRequired
+                    ? new Dictionary<string, object?> { ["code"] = "recent_auth_required" } : null);
+        }
 
         if (result == ResourceWriteKind.Conflict)
         {
