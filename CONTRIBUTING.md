@@ -230,6 +230,15 @@ Skills guide decisions. The formatter, analyzers and tests enforce what can be
 automated. Reviewers still assess design, authorization, data integrity and
 behavioral correctness.
 
+## Authorization design
+
+The shared [authorization design and delivery plan](design/authorization.md)
+defines explicit permission bundles, resource visibility and approval scopes,
+self-operation rules, transactional audit, recent authentication and bootstrap
+handover. It distinguishes planned behavior from the current API; use its slice
+sequence and acceptance matrix when implementing authorization. Local planning
+notes under `docs/` are ignored by Git and are not the shared design contract.
+
 ## Pull requests and merge policy
 
 The `Backend quality` workflow runs on every PR and pushes to `main`, using
