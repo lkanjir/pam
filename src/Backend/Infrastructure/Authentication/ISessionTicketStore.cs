@@ -15,6 +15,8 @@ public interface ISessionTicketStore
     Task RemoveAsync(string key);
     Task DiscardUnissuedAsync(string key);
     Task<SessionObservation> ObserveAsync(string sessionIdHash);
+    // An expected observation conditionally ends only that still-open, unchanged session.
+    // A concurrent completion returns null; explicit retries without an observation preserve the first intent.
     Task<PendingSessionEnd?> EndAsync(PendingSessionEnd completion, SessionObservation? expected = null);
     Task<IReadOnlyList<PendingSessionEnd>> ReadPendingEndsAsync(int limit, CancellationToken cancellationToken = default);
     Task AcknowledgeEndAsync(string sessionIdHash);

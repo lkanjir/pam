@@ -24,7 +24,10 @@ public sealed class RedisTicketStore : ISessionTicketStore
         """;
     private const string EndScript = """
         local pending = redis.call('HGET', KEYS[3], ARGV[1])
-        if pending then return pending end
+        if pending then
+            if ARGV[3] == 'observed' then return false end
+            return pending
+        end
         local ticket = redis.call('GET', KEYS[1])
         local lease = redis.call('HGET', KEYS[2], ARGV[1])
         if ARGV[3] == 'observed' then
