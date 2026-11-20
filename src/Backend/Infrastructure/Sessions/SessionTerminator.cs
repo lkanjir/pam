@@ -48,6 +48,11 @@ public sealed class SessionTerminator(
             return;
         }
 
+        await PersistCompletionAsync(sessionIdHash, end, correlationId);
+    }
+
+    private async Task PersistCompletionAsync(string sessionIdHash, PendingSessionEnd end, string correlationId)
+    {
         try
         {
             if (end.ExpectedExpiresAt is { } expiry)
