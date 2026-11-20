@@ -27,7 +27,10 @@ public static class ResourceEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status400BadRequest);
         resources.MapGet("/{id:guid}", GetById).WithName(GetByIdRouteName)
-            .WithDescription("Returns a strong ETag identifying the resource version for conditional updates.");
+            .RequireAuthorization(PamPermissions.ResourcesReadAll)
+            .WithSummary("Read a managed resource")
+            .WithDescription("Requires resources.read_all. Returns a strong ETag identifying the resource version for conditional updates.")
+            .ProducesProblem(StatusCodes.Status403Forbidden);
         resources.MapPost("", Create).ProducesValidationProblem()
             .RequireAuthorization(PamPermissions.ResourcesManage, PamPolicies.RecentAuthentication)
             .WithName("Resource.Create")
