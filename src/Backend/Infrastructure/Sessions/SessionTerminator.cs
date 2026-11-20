@@ -51,6 +51,30 @@ public sealed class SessionTerminator(
         await PersistCompletionAsync(sessionIdHash, end, correlationId);
     }
 
+    public async Task<bool> TryEndForReauthenticationAsync(
+        string sessionIdHash, SessionObservation observed, string correlationId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(correlationId);
+        cancellationToken.ThrowIfCancellationRequested();
+        var now = timeProvider.GetUtcNow();
+        if (!SessionIdentifier.IsValid(sessionIdHash) || !observed.HasTicket || observed.PendingEnd is not null
+            || observed.TicketExpiresAt is not { } expiresAt || expiresAt <= now)
+        {
+            return false;
+        }
+
+        var end = await ticketStore.EndAsync(new PendingSessionEnd(sessionIdHash, now,
+            SessionEndReason.Reauthentication.ToCode(), correlationId,
+            observed.LeaseExpiresAt ?? observed.TicketExpiresAt), observed);
+        if (end is null)
+        {
+            return false;
+        }
+
+        await PersistCompletionAsync(sessionIdHash, end, correlationId);
+        return true;
+    }
+
     private async Task PersistCompletionAsync(string sessionIdHash, PendingSessionEnd end, string correlationId)
     {
         try
