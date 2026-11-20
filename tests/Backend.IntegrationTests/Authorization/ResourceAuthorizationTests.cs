@@ -17,6 +17,40 @@ public sealed class ResourceAuthorizationTests(PostgresFixture postgres, RedisFi
     [InlineData("admin,user", 200)]
     [InlineData("user", 403)]
     [InlineData("approver", 403)]
+    [InlineData("superadmin", 403)]
+    [InlineData("", 403)]
+    public async Task Get_ManagementDetails_RequiresExplicitReadCapability(string roles, int status)
+    {
+        // Arrange
+        await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection,
+            roles: roles.Split(',', StringSplitOptions.RemoveEmptyEntries));
+        await test.AuthenticateAsync(includeResourceVersion: false);
+
+        // Act
+        using var response = await test.Client.GetAsync(test.ResourceUrl);
+
+        // Assert
+        Assert.Equal(status, (int)response.StatusCode);
+        if (status == 200)
+        {
+            var resource = await response.Content.ReadFromJsonAsync<ResourceResponse>();
+            Assert.NotNull(resource);
+            Assert.Equal(test.Resource.PublicId, resource.Id);
+            Assert.Equal("Original target", resource.Name);
+            Assert.NotNull(response.Headers.ETag);
+        }
+        else
+        {
+            Assert.Null(response.Headers.ETag);
+            Assert.DoesNotContain("Original target", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData("admin", 200)]
+    [InlineData("admin,user", 200)]
+    [InlineData("user", 403)]
+    [InlineData("approver", 403)]
     [InlineData("user,approver", 403)]
     [InlineData("Admin", 403)]
     [InlineData("superadmin", 403)]
