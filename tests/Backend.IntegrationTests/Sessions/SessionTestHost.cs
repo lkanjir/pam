@@ -44,7 +44,8 @@ internal static class SessionTestHost
             var current = await context.RequestServices.GetRequiredService<IPrincipalIdentityReader>()
                 .FindAsync(principal.Issuer, principal.Subject, context.RequestAborted)
                 ?? throw new InvalidOperationException("The test principal was not found.");
-            var identity = PamClaims.Create(current, principal.Issuer, principal.Subject, "idp-session", clock.GetUtcNow());
+            DateTimeOffset? authenticatedAt = context.Request.Query.ContainsKey("without-auth-time") ? null : clock.GetUtcNow();
+            var identity = PamClaims.Create(current, principal.Issuer, principal.Subject, "idp-session", authenticatedAt);
             var properties = new AuthenticationProperties
             {
                 IsPersistent = context.Request.Query["persistent"] == "True",

@@ -81,9 +81,9 @@ internal sealed class ResourceTestContext : IAsyncDisposable
             database, clock, long.Parse(principalId, CultureInfo.InvariantCulture), resource, application);
     }
 
-    public async Task AuthenticateAsync(bool includeResourceVersion = true)
+    public async Task AuthenticateAsync(bool includeResourceVersion = true, bool includeAuthenticationTime = true)
     {
-        using var login = await Client.GetAsync("/login");
+        using var login = await Client.GetAsync(includeAuthenticationTime ? "/login" : "/login?without-auth-time");
         login.EnsureSuccessStatusCode();
         SessionTestHost.UpdateCookie(Client, login);
         using var antiforgery = await Client.GetAsync("/api/auth/antiforgery");
