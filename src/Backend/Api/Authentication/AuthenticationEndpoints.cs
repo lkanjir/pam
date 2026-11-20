@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Api.Authorization;
 using Application.Sessions;
 using Infrastructure.Authentication;
 using Microsoft.AspNetCore.Antiforgery;
@@ -18,6 +19,7 @@ public static class AuthenticationEndpoints
 
         endpoints.MapGet("/auth/reauthenticate", Reauthenticate)
             .RequireAuthorization()
+            .WithMetadata(new PamSessionEndpointMetadata())
             .WithName("Authentication.Reauthenticate")
             .WithSummary("Reauthenticate the current PAM identity through Keycloak")
             .WithDescription("Requests a new authentication using max_age=0, bound to the original active PAM session. "
@@ -27,20 +29,20 @@ public static class AuthenticationEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
-        endpoints.MapGet("/me", GetCurrentUser);
+        endpoints.MapGet("/me", GetCurrentUser).RequireAuthorization().WithMetadata(new PamSessionEndpointMetadata());
 
         endpoints.MapGet("/auth/antiforgery", (HttpContext context, IAntiforgery antiforgery) =>
         {
             var tokens = antiforgery.GetAndStoreTokens(context);
             return TypedResults.Ok(new AntiforgeryTokenResponse(tokens.RequestToken!));
-        });
+        }).RequireAuthorization().WithMetadata(new PamSessionEndpointMetadata());
 
         endpoints.MapPost("/auth/logout", async (HttpContext context) =>
         {
             context.Response.Headers.CacheControl = "no-store";
             await context.EndPamSessionAsync(SessionEndReason.Logout);
             return TypedResults.NoContent();
-        });
+        }).RequireAuthorization().WithMetadata(new PamSessionEndpointMetadata());
 
         return endpoints;
     }

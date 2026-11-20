@@ -19,6 +19,8 @@ public static class ResourceEndpoints
         var resources = endpoints.MapGroup("/resources").WithTags("Resources");
 
         resources.MapGet("", List)
+            .WithName("Resource.List")
+            .WithMetadata(new PamConditionalPermissionMetadata(PamPermissions.ResourcesReadAll, PamPermissions.RequestsCreate))
             .WithSummary("List managed resources or the caller's requestable resources")
             .WithDescription("Set requestable=true to include only active resources with active entitlements "
                 + "enabled for the current user. Each item then includes the available entitlements and their "

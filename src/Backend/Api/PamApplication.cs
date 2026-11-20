@@ -46,10 +46,10 @@ public static class PamApplication
         app.UseAuthentication();
         app.UseAuthorization();
 
-        app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+        app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
         app.MapHealthChecks(
             "/health/ready",
-            new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
+            new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") }).AllowAnonymous();
 
         var api = app.MapGroup("/api").RequireAuthorization().AddEndpointFilter<AntiforgeryFilter>();
         api.MapAuthenticationEndpoints();
@@ -58,7 +58,7 @@ public static class PamApplication
 
         if (app.Environment.IsDevelopment())
         {
-            app.MapOpenApi();
+            app.MapOpenApi().AllowAnonymous();
             app.UseSwaggerUI(options =>
             {
                 options.SwaggerEndpoint("/openapi/v1.json", "PAM API");

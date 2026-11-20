@@ -7,6 +7,7 @@ public static class AuthorizationServiceCollectionExtensions
 {
     public static IServiceCollection AddPamAuthorization(this IServiceCollection services)
     {
+        services.AddSingleton<IStartupFilter, PamEndpointAuthorizationStartupFilter>();
         services.AddSingleton<IAuthorizationHandler, PamRecentAuthenticationHandler>();
         services.AddSingleton<IAuthorizationMiddlewareResultHandler, PamAuthorizationResultHandler>();
         services.AddAuthorizationBuilder()
