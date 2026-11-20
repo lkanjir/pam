@@ -1,6 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using Api.Authentication;
 using Application.Identity;
 using FakeItEasy;
 using Microsoft.AspNetCore.Authentication;

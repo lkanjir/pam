@@ -1,6 +1,6 @@
+using Application.Authorization;
 using Application.Common.Diagnostics;
 using Application.Identity;
-using Application.Authorization;
 using Infrastructure.Authentication;
 using Infrastructure.Sessions;
 using Microsoft.AspNetCore.Authentication;
