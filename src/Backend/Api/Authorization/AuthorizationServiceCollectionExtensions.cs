@@ -1,4 +1,5 @@
 using Application.Authorization;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Api.Authorization;
 
@@ -6,7 +7,11 @@ public static class AuthorizationServiceCollectionExtensions
 {
     public static IServiceCollection AddPamAuthorization(this IServiceCollection services)
     {
+        services.AddSingleton<IAuthorizationHandler, PamRecentAuthenticationHandler>();
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, PamAuthorizationResultHandler>();
         services.AddAuthorizationBuilder()
+            .AddPolicy(PamPolicies.RecentAuthentication, policy =>
+                policy.RequireAuthenticatedUser().AddRequirements(new PamRecentAuthenticationRequirement()))
             .AddPolicy(PamPermissions.RequestsCreate, policy =>
                 policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.RequestsCreate)))
             .AddPolicy(PamPermissions.RequestsReadOwn, policy =>

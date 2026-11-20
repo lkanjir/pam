@@ -22,7 +22,7 @@ public sealed class PermissionPolicyTests
     public async Task Authorize_ResourceManagementRead_UsesOnlyExplicitAuthenticatedAdmin(string roles, bool authenticated, bool allowed)
     {
         // Arrange
-        using var services = new ServiceCollection().AddLogging().AddPamAuthorization().BuildServiceProvider();
+        using var services = new ServiceCollection().AddLogging().AddSingleton(TimeProvider.System).AddPamAuthorization().BuildServiceProvider();
         var authorization = services.GetRequiredService<IAuthorizationService>();
         var identity = new ClaimsIdentity(roles.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(role => new Claim(PamClaimTypes.Role, role)),
@@ -46,7 +46,7 @@ public sealed class PermissionPolicyTests
     public async Task Authorize_OwnerRead_RequiresExplicitUserCapability(string roles, bool allowed)
     {
         // Arrange
-        using var services = new ServiceCollection().AddLogging().AddPamAuthorization().BuildServiceProvider();
+        using var services = new ServiceCollection().AddLogging().AddSingleton(TimeProvider.System).AddPamAuthorization().BuildServiceProvider();
         var authorization = services.GetRequiredService<IAuthorizationService>();
         var identity = new ClaimsIdentity(roles.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(role => new Claim(PamClaimTypes.Role, role)), "test", "name", PamClaimTypes.Role);
@@ -68,7 +68,7 @@ public sealed class PermissionPolicyTests
     public async Task Authorize_Submission_RequiresExplicitRequesterCapability(string roles, bool allowed)
     {
         // Arrange
-        using var services = new ServiceCollection().AddLogging().AddPamAuthorization().BuildServiceProvider();
+        using var services = new ServiceCollection().AddLogging().AddSingleton(TimeProvider.System).AddPamAuthorization().BuildServiceProvider();
         var authorization = services.GetRequiredService<IAuthorizationService>();
         var identity = new ClaimsIdentity(roles.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(role => new Claim(PamClaimTypes.Role, role)), "test", "name", PamClaimTypes.Role);
@@ -91,7 +91,7 @@ public sealed class PermissionPolicyTests
     public async Task Authorize_UnknownPermission_DoesNotFallBackToAuthenticatedAccess()
     {
         // Arrange
-        using var services = new ServiceCollection().AddLogging().AddPamAuthorization().BuildServiceProvider();
+        using var services = new ServiceCollection().AddLogging().AddSingleton(TimeProvider.System).AddPamAuthorization().BuildServiceProvider();
         var authorization = services.GetRequiredService<IAuthorizationService>();
         var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(PamClaimTypes.Role, "admin")], "test"));
 
