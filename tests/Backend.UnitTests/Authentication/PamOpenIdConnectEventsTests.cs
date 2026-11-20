@@ -6,7 +6,6 @@ using FakeItEasy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Backend.UnitTests.Authentication;
 
@@ -23,7 +22,7 @@ public sealed class PamOpenIdConnectEventsTests
         // Arrange
         var reader = A.Fake<IPrincipalIdentityReader>();
         var problems = A.Fake<IProblemDetailsService>();
-        var events = new PamOpenIdConnectEvents(reader, problems, NullLogger<PamOpenIdConnectEvents>.Instance);
+        var events = OidcEventsFixture.Create(reader, problems);
         var claims = subject is null ? Array.Empty<Claim>() : [new Claim("sub", subject)];
         var context = new TokenValidatedContext(new DefaultHttpContext(), Scheme, new OpenIdConnectOptions(),
             new ClaimsPrincipal(new ClaimsIdentity(claims)), new AuthenticationProperties())
@@ -46,8 +45,7 @@ public sealed class PamOpenIdConnectEventsTests
     {
         // Arrange
         var problems = A.Fake<IProblemDetailsService>();
-        var events = new PamOpenIdConnectEvents(A.Fake<IPrincipalIdentityReader>(), problems,
-            NullLogger<PamOpenIdConnectEvents>.Instance);
+        var events = OidcEventsFixture.Create(A.Fake<IPrincipalIdentityReader>(), problems);
         var http = new DefaultHttpContext { RequestAborted = new CancellationToken(true) };
         var context = new RemoteFailureContext(http, Scheme, new OpenIdConnectOptions(),
             new OperationCanceledException());

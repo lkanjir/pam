@@ -6,7 +6,6 @@ using FakeItEasy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Backend.UnitTests.Authentication;
 
@@ -64,8 +63,7 @@ public sealed class PamAuthenticationTimeTests
         var reader = A.Fake<IPrincipalIdentityReader>();
         var principal = new PrincipalIdentity(42, Guid.NewGuid(), "Ana", true, ["user"]);
         A.CallTo(() => reader.FindAsync("issuer", "ana", A<CancellationToken>._)).Returns(principal);
-        var events = new PamOpenIdConnectEvents(reader, A.Fake<IProblemDetailsService>(),
-            NullLogger<PamOpenIdConnectEvents>.Instance);
+        var events = OidcEventsFixture.Create(reader, A.Fake<IProblemDetailsService>());
         var context = new TokenValidatedContext(new DefaultHttpContext(),
             new AuthenticationScheme("oidc", null, typeof(OpenIdConnectHandler)), new OpenIdConnectOptions(),
             new ClaimsPrincipal(new ClaimsIdentity(
