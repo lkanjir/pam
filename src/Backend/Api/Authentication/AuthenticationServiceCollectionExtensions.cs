@@ -46,8 +46,6 @@ public static class AuthenticationServiceCollectionExtensions
                 options.ExpireTimeSpan = sessionOptions.Value.IdleTimeout;
             });
 
-        services.AddAuthorization();
-
         return services;
     }
 

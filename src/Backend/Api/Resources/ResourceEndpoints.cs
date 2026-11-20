@@ -1,7 +1,9 @@
 using Api.Authentication;
+using Application.Authorization;
 using Application.Common.Pagination;
 using Application.Resources;
 using Application.Sessions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,7 +21,9 @@ public static class ResourceEndpoints
             .WithSummary("List managed resources or the caller's requestable resources")
             .WithDescription("Set requestable=true to include only active resources with active entitlements "
                 + "enabled for the current user. Each item then includes the available entitlements and their "
-                + "duration, approval and ticket requirements. Uses limit and cursor pagination.")
+                + "duration, approval and ticket requirements. The management list requires resources.read_all. "
+                + "Uses limit and cursor pagination.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status400BadRequest);
         resources.MapGet("/{id:guid}", GetById).WithName(GetByIdRouteName)
             .WithDescription("Returns a strong ETag identifying the resource version for conditional updates.");
@@ -40,10 +44,11 @@ public static class ResourceEndpoints
         return endpoints;
     }
 
-    private static async Task<Results<Ok<CursorPage<ResourceResponse>>, UnauthorizedHttpResult>> List(
+    private static async Task<Results<Ok<CursorPage<ResourceResponse>>, UnauthorizedHttpResult, ForbidHttpResult>> List(
         [AsParameters] ResourceListQuery query,
         HttpContext context,
         IResourceService resourceService,
+        IAuthorizationService authorization,
         CancellationToken cancellationToken)
     {
         if (query.Requestable)
@@ -60,6 +65,11 @@ public static class ResourceEndpoints
                 cancellationToken);
 
             return TypedResults.Ok(requestablePage);
+        }
+
+        if (!(await authorization.AuthorizeAsync(context.User, PamPermissions.ResourcesReadAll)).Succeeded)
+        {
+            return TypedResults.Forbid();
         }
 
         var page = await resourceService.ListAsync(

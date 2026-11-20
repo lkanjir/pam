@@ -1,5 +1,6 @@
 using Api.AccessRequests;
 using Api.Authentication;
+using Api.Authorization;
 using Api.Errors;
 using Api.Filters;
 using Api.Resources;
@@ -19,6 +20,7 @@ public static class PamApplication
         services.AddInfrastructure(configuration);
         services.AddValidation();
         services.AddPamAuthentication(configuration, environment);
+        services.AddPamAuthorization();
         services.AddPamAntiforgery(environment);
         services.AddOpenApi();
         services.AddPamErrorHandling();

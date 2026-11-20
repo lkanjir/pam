@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net.Http.Json;
 using Api.Authentication;
+using Application.Authorization;
 using Backend.IntegrationTests.Fixtures;
 using Backend.IntegrationTests.Sessions;
 using Backend.Tests.Support;
@@ -43,11 +44,14 @@ internal sealed class ResourceTestContext : IAsyncDisposable
     public static async Task<ResourceTestContext> CreateAsync(
         PostgresFixture postgres,
         IConnectionMultiplexer redis,
-        Action<WebApplication>? configure = null)
+        Action<WebApplication>? configure = null,
+        string[]? roles = null)
     {
         var database = await postgres.CreateDatabaseAsync();
         var clock = new TestTimeProvider();
         string principalId = await SessionTestHost.SeedPrincipalAsync(database);
+        await SessionTestHost.AssignRolesAsync(database,
+            long.Parse(principalId, CultureInfo.InvariantCulture), roles ?? [PamRoleCodes.Admin, "user"]);
         var creator = new Principal { Issuer = "test-issuer", Subject = "ivan" };
         var resource = new ManagedResource
         {

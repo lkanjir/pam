@@ -41,9 +41,10 @@ internal static class SessionTestHost
             long id = long.Parse(principalId, System.Globalization.CultureInfo.InvariantCulture);
             var principal = await context.RequestServices.GetRequiredService<PamDbContext>().Principals
                 .AsNoTracking().SingleAsync(principal => principal.Id == id, context.RequestAborted);
-            var identity = PamClaims.Create(new PrincipalIdentity(
-                principal.Id, principal.PublicId, principal.DisplayName, principal.IsEnabled, []),
-                principal.Issuer, principal.Subject, "idp-session");
+            var current = await context.RequestServices.GetRequiredService<IPrincipalIdentityReader>()
+                .FindAsync(principal.Issuer, principal.Subject, context.RequestAborted)
+                ?? throw new InvalidOperationException("The test principal was not found.");
+            var identity = PamClaims.Create(current, principal.Issuer, principal.Subject, "idp-session");
             var properties = new AuthenticationProperties
             {
                 IsPersistent = context.Request.Query["persistent"] == "True",
@@ -167,6 +168,26 @@ internal static class SessionTestHost
         var context = new DefaultHttpContext { RequestServices = services };
         context.Request.Scheme = "http";
         return context;
+    }
+
+    public static async Task AssignRolesAsync(TestDatabase database, long principalId, params string[] codes)
+    {
+        foreach (string code in codes)
+        {
+            var role = await database.Context.PamRoles.SingleOrDefaultAsync(role => role.Code == code);
+            if (role is null)
+            {
+                role = new PamRole { Code = code, CreatedByPrincipalId = principalId };
+                database.Context.PamRoles.Add(role);
+            }
+            database.Context.PamRoleAssignments.Add(new PamRoleAssignment
+            {
+                PrincipalId = principalId,
+                Role = role,
+                AssignedByPrincipalId = principalId
+            });
+        }
+        await database.Context.SaveChangesAsync();
     }
 
     public static async Task<string> SeedPrincipalAsync(TestDatabase database)
