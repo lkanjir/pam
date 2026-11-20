@@ -21,7 +21,7 @@ public static class ResourceEndpoints
             .WithSummary("List managed resources or the caller's requestable resources")
             .WithDescription("Set requestable=true to include only active resources with active entitlements "
                 + "enabled for the current user. Each item then includes the available entitlements and their "
-                + "duration, approval and ticket requirements. The management list requires resources.read_all. "
+                + "duration, approval and ticket requirements. The management list requires resources.read_all; requestable=true requires requests.create. "
                 + "Uses limit and cursor pagination.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status400BadRequest);
@@ -53,6 +53,11 @@ public static class ResourceEndpoints
     {
         if (query.Requestable)
         {
+            if (!(await authorization.AuthorizeAsync(context.User, PamPermissions.RequestsCreate)).Succeeded)
+            {
+                return TypedResults.Forbid();
+            }
+
             if (!PamClaims.TryRead(context.User, out var identity))
             {
                 return TypedResults.Unauthorized();
