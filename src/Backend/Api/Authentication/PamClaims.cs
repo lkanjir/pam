@@ -9,7 +9,7 @@ namespace Api.Authentication;
 public static class PamClaims
 {
     public static ClaimsPrincipal Create(PrincipalIdentity principal, string issuer, string subject,
-        string? idpSessionId)
+        string? idpSessionId, DateTimeOffset? authenticatedAt = null)
     {
         var claims = new List<Claim>
         {
@@ -20,6 +20,11 @@ public static class PamClaims
             new(PamClaimTypes.Subject, subject)
         };
         claims.AddRange(principal.Roles.Select(role => new Claim(PamClaimTypes.Role, role)));
+        if (authenticatedAt is { } authenticationTime)
+        {
+            claims.Add(new Claim(PamClaimTypes.AuthenticationTime,
+                authenticationTime.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture), ClaimValueTypes.Integer64));
+        }
         if (!string.IsNullOrWhiteSpace(idpSessionId))
         {
             claims.Add(new Claim(PamClaimTypes.IdpSessionId, idpSessionId));

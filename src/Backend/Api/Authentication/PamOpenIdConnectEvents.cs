@@ -45,7 +45,9 @@ public sealed class PamOpenIdConnectEvents(
         }
 
         var idpSessionId = context.Principal?.FindFirst(PamClaimTypes.IdpSessionId)?.Value;
-        context.Principal = PamClaims.Create(principal, issuer, subject, idpSessionId);
+        var authenticatedAt = context.Principal is { } tokenPrincipal
+            ? PamAuthenticationTime.Read(tokenPrincipal, "auth_time") : null;
+        context.Principal = PamClaims.Create(principal, issuer, subject, idpSessionId, authenticatedAt);
     }
 
     public override async Task AccessDenied(AccessDeniedContext context)

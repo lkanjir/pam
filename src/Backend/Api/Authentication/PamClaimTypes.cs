@@ -10,5 +10,6 @@ public static class PamClaimTypes
     public const string Issuer = "pam_issuer";
     public const string Subject = "sub";
     public const string Role = "pam_role";
+    public const string AuthenticationTime = "pam_auth_time";
     public const string IdpSessionId = "sid";
 }
