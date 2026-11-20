@@ -82,11 +82,20 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
     public async Task<ResourceWriteResult> UpdateAsync(
         Guid publicId,
         UpdateResourceRequest request,
-        PrincipalSnapshot actor,
+        AdministrativeActor actor,
         string correlationId,
         uint expectedVersion,
         CancellationToken cancellationToken = default)
     {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var authorization = await AdministrativeAuthorization.CheckAsync(
+            dbContext, timeProvider, actor, PamPermissions.ResourcesManage, cancellationToken);
+        if (authorization != AdministrativeDecision.Allowed)
+        {
+            return new(authorization == AdministrativeDecision.Forbidden
+                ? ResourceWriteKind.Forbidden : ResourceWriteKind.RecentAuthenticationRequired);
+        }
+
         var resource = await dbContext.ManagedResources
             .SingleOrDefaultAsync(resource => resource.PublicId == publicId, cancellationToken);
 
@@ -107,11 +116,11 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
         resource.Environment = request.Environment.Trim();
         resource.IsActive = request.IsActive;
         resource.ModifiedAt = now.UtcDateTime;
-        resource.ModifiedByPrincipalId = actor.Id;
+        resource.ModifiedByPrincipalId = actor.Principal.Id;
         dbContext.Entry(resource).Property(item => item.ModifiedAt).IsModified = true;
 
         dbContext.AuditEvents.Add(CreateAuditEvent(
-            "resource.updated", resource, actor, now.UtcDateTime, correlationId));
+            "resource.updated", resource, actor.Principal, now.UtcDateTime, correlationId));
 
         try
         {
@@ -121,6 +130,8 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
         {
             return new(ResourceWriteKind.Conflict);
         }
+
+        await transaction.CommitAsync(cancellationToken);
 
         return new(ResourceWriteKind.Succeeded, new ResourceResponse(
             resource.PublicId,

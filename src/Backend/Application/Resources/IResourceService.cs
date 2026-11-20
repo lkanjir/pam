@@ -17,7 +17,7 @@ public interface IResourceService
     Task<ResourceWriteResult> UpdateAsync(
         Guid publicId,
         UpdateResourceRequest request,
-        PrincipalSnapshot actor,
+        AdministrativeActor actor,
         string correlationId,
         uint expectedVersion,
         CancellationToken cancellationToken = default);

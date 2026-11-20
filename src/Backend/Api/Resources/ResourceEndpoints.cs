@@ -36,9 +36,13 @@ public static class ResourceEndpoints
                 + "Creates the resource and its audit atomically; grants no target access or approval authority.")
             .ProducesProblem(StatusCodes.Status403Forbidden);
         resources.MapPut("/{id:guid}", Update).WithResourceVersion().ProducesValidationProblem()
+            .RequireAuthorization(PamPermissions.ResourcesManage, PamPolicies.RecentAuthentication)
+            .WithName("Resource.Update")
+            .WithSummary("Update a managed resource")
             .WithDescription("Requires one strong resource ETag in If-Match. Missing preconditions return 428; "
                 + "a stale version or concurrent write returns 412 without changing the resource or its audit.")
             .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
         resources.MapDelete("/{id:guid}", Delete).WithResourceVersion()
@@ -177,10 +181,17 @@ public static class ResourceEndpoints
         var result = await resourceService.UpdateAsync(
             id,
             request,
-            actor,
+            new AdministrativeActor(actor, PamAuthenticationTime.Read(context.User)),
             context.TraceIdentifier,
             version,
             cancellationToken);
+
+        if (result.Kind is ResourceWriteKind.Forbidden or ResourceWriteKind.RecentAuthenticationRequired)
+        {
+            return TypedResults.Problem(statusCode: StatusCodes.Status403Forbidden,
+                extensions: result.Kind == ResourceWriteKind.RecentAuthenticationRequired
+                    ? new Dictionary<string, object?> { ["code"] = "recent_auth_required" } : null);
+        }
 
         if (result.Kind == ResourceWriteKind.Conflict)
         {
