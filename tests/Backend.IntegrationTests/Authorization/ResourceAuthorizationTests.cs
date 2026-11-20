@@ -5,6 +5,7 @@ using Application.Resources;
 using Backend.IntegrationTests.Fixtures;
 using Backend.IntegrationTests.Resources;
 using Microsoft.EntityFrameworkCore;
+using static Backend.IntegrationTests.AccessRequests.AccessRequestTestData;
 
 namespace Backend.IntegrationTests.Authorization;
 
@@ -65,4 +66,39 @@ public sealed class ResourceAuthorizationTests(PostgresFixture postgres, RedisFi
         Assert.Equal("access_changed", ended.EndReason);
         Assert.NotNull(ended.EndedAt);
     }
+    [Theory]
+    [InlineData("user", 200)]
+    [InlineData("admin,user", 200)]
+    [InlineData("approver,user", 200)]
+    [InlineData("admin", 403)]
+    [InlineData("approver", 403)]
+    [InlineData("", 403)]
+    public async Task List_RequestableCatalog_RequiresRequesterCapability(string roles, int status)
+    {
+        // Arrange
+        await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection,
+            roles: roles.Split(',', StringSplitOptions.RemoveEmptyEntries));
+        var entitlement = await SeedEntitlementAsync(test);
+        await test.AuthenticateAsync(includeResourceVersion: false);
+
+        // Act
+        using var response = await test.Client.GetAsync("/api/resources?requestable=true");
+
+        // Assert
+        Assert.Equal(status, (int)response.StatusCode);
+        if (status == 200)
+        {
+            var page = await response.Content.ReadFromJsonAsync<CursorPage<ResourceResponse>>();
+            Assert.NotNull(page);
+            var resource = Assert.Single(page.Items);
+            Assert.Equal(test.Resource.PublicId, resource.Id);
+            Assert.NotNull(resource.Entitlements);
+            Assert.Equal(entitlement.PublicId, Assert.Single(resource.Entitlements).Id);
+        }
+        else
+        {
+            Assert.DoesNotContain("Original target", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+    }
+
 }
