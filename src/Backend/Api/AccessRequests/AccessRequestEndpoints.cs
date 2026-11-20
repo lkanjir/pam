@@ -37,6 +37,7 @@ public static class AccessRequestEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
         requests.MapPost("", Submit)
+            .RequireAuthorization(PamPermissions.RequestsCreate)
             .WithName("AccessRequest.Create")
             .WithSummary("Submit an access request and evaluate Sprint 1 eligibility")
             .WithDescription("The requester comes from the PAM session. Resource and entitlement must be active "

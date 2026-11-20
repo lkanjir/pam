@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Application.AccessRequests;
+using Application.Authorization;
 using Application.Common.Pagination;
 using Application.Sessions;
 using Infrastructure.Persistence;
@@ -110,6 +111,13 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
             .SingleOrDefaultAsync(cancellationToken);
         if (principal is null || !principal.IsEnabled || principal.PublicId != requester.PublicId
             || principal.Issuer != requester.Issuer || principal.Subject != requester.Subject)
+        {
+            return new(AccessRequestSubmissionKind.Forbidden);
+        }
+
+        var allowedRoles = PamPermissionRoles.For(PamPermissions.RequestsCreate);
+        if (!await dbContext.PamRoleAssignments.AnyAsync(assignment => assignment.PrincipalId == requester.Id
+            && allowedRoles.Contains(assignment.Role.Code), cancellationToken))
         {
             return new(AccessRequestSubmissionKind.Forbidden);
         }

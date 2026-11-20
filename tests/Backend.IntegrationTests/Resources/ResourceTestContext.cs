@@ -51,7 +51,7 @@ internal sealed class ResourceTestContext : IAsyncDisposable
         var clock = new TestTimeProvider();
         string principalId = await SessionTestHost.SeedPrincipalAsync(database);
         await SessionTestHost.AssignRolesAsync(database,
-            long.Parse(principalId, CultureInfo.InvariantCulture), roles ?? [PamRoleCodes.Admin, "user"]);
+            long.Parse(principalId, CultureInfo.InvariantCulture), roles ?? [PamRoleCodes.Admin, PamRoleCodes.User]);
         var creator = new Principal { Issuer = "test-issuer", Subject = "ivan" };
         var resource = new ManagedResource
         {
