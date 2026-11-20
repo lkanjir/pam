@@ -4,6 +4,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Api.Authentication;
+using Api.Authorization;
 using Api.Errors;
 using Api.Filters;
 using Application.Identity;
@@ -158,6 +159,7 @@ public sealed class OidcErrorTests
             });
             builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
             builder.Services.AddPamAuthentication(builder.Configuration, builder.Environment);
+            builder.Services.AddPamAuthorization();
             builder.Services.AddPamErrorHandling();
             builder.Services.AddPamAntiforgery(builder.Environment);
             builder.Services.AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider());

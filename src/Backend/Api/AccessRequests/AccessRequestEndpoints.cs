@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Api.Authentication;
 using Application.AccessRequests;
+using Application.Authorization;
 using Application.Common.Pagination;
 using Application.Sessions;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -14,6 +15,8 @@ public static class AccessRequestEndpoints
     {
         var requests = endpoints.MapGroup("/access-requests").WithTags("Access requests");
         requests.MapGet("/mine", ListMine)
+            .RequireAuthorization(PamPermissions.RequestsReadOwn)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .WithName("AccessRequest.ListMine")
             .WithSummary("List the authenticated caller's access requests")
             .WithDescription("Returns only requests owned by the current PAM session, including denied requests "
