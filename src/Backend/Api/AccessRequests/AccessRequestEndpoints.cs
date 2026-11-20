@@ -26,6 +26,8 @@ public static class AccessRequestEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
         requests.MapGet("/{requestId:guid}", GetMine)
+            .RequireAuthorization(PamPermissions.RequestsReadOwn)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .WithName("AccessRequest.GetById")
             .WithSummary("Get an access request owned by the authenticated caller")
             .WithDescription("Returns the saved request and policy evaluation, current resource and entitlement "
