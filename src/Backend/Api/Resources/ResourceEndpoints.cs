@@ -1,4 +1,5 @@
 using Api.Authentication;
+using Api.Authorization;
 using Application.Authorization;
 using Application.Common.Pagination;
 using Application.Resources;
@@ -27,7 +28,13 @@ public static class ResourceEndpoints
             .ProducesProblem(StatusCodes.Status400BadRequest);
         resources.MapGet("/{id:guid}", GetById).WithName(GetByIdRouteName)
             .WithDescription("Returns a strong ETag identifying the resource version for conditional updates.");
-        resources.MapPost("", Create).ProducesValidationProblem();
+        resources.MapPost("", Create).ProducesValidationProblem()
+            .RequireAuthorization(PamPermissions.ResourcesManage, PamPolicies.RecentAuthentication)
+            .WithName("Resource.Create")
+            .WithSummary("Create a managed resource")
+            .WithDescription("Requires resources.manage and original OIDC authentication within ten minutes. "
+                + "Creates the resource and its audit atomically; grants no target access or approval authority.")
+            .ProducesProblem(StatusCodes.Status403Forbidden);
         resources.MapPut("/{id:guid}", Update).WithResourceVersion().ProducesValidationProblem()
             .WithDescription("Requires one strong resource ETag in If-Match. Missing preconditions return 428; "
                 + "a stale version or concurrent write returns 412 without changing the resource or its audit.")
@@ -100,7 +107,7 @@ public static class ResourceEndpoints
         return resource is null ? TypedResults.NotFound() : TypedResults.Ok(resource);
     }
 
-    public static async Task<Results<CreatedAtRoute<ResourceResponse>, UnauthorizedHttpResult>> Create(
+    public static async Task<Results<CreatedAtRoute<ResourceResponse>, UnauthorizedHttpResult, ForbidHttpResult, ProblemHttpResult>> Create(
         CreateResourceRequest request,
         HttpContext context,
         IResourceService resourceService,
@@ -118,12 +125,24 @@ public static class ResourceEndpoints
             identity.Issuer,
             identity.Subject);
 
-        var resource = await resourceService.CreateAsync(
+        var result = await resourceService.CreateAsync(
             request,
-            actor,
+            new AdministrativeActor(actor, PamAuthenticationTime.Read(context.User)),
             context.TraceIdentifier,
             cancellationToken);
 
+        if (result.Kind == ResourceWriteKind.Forbidden)
+        {
+            return TypedResults.Forbid();
+        }
+        if (result.Kind == ResourceWriteKind.RecentAuthenticationRequired)
+        {
+            return TypedResults.Problem(statusCode: StatusCodes.Status403Forbidden,
+                title: "Recent authentication is required.",
+                extensions: new Dictionary<string, object?> { ["code"] = "recent_auth_required" });
+        }
+
+        var resource = result.Resource ?? throw new InvalidOperationException("Create returned no resource.");
         return TypedResults.CreatedAtRoute(
             resource,
             GetByIdRouteName,

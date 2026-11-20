@@ -6,4 +6,5 @@ public static class PamPermissions
     public const string RequestsCreate = "requests.create";
     public const string RequestsReadOwn = "requests.read_own";
     public const string ResourcesReadAll = "resources.read_all";
+    public const string ResourcesManage = "resources.manage";
 }

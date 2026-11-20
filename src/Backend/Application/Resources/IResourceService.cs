@@ -1,3 +1,4 @@
+using Application.Authorization;
 using Application.Common.Pagination;
 using Application.Sessions;
 
@@ -7,9 +8,9 @@ public interface IResourceService
 {
     Task<ResourceResponse?> GetByIdAsync(Guid publicId, CancellationToken cancellationToken = default);
 
-    Task<ResourceResponse> CreateAsync(
+    Task<ResourceWriteResult> CreateAsync(
         CreateResourceRequest request,
-        PrincipalSnapshot actor,
+        AdministrativeActor actor,
         string correlationId,
         CancellationToken cancellationToken = default);
 

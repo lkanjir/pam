@@ -1,7 +1,9 @@
 using System.Text.Json;
+using Application.Authorization;
 using Application.Common.Pagination;
 using Application.Resources;
 using Application.Sessions;
+using Infrastructure.Authorization;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -28,12 +30,21 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
             .SingleOrDefaultAsync(cancellationToken);
     }
 
-    public async Task<ResourceResponse> CreateAsync(
+    public async Task<ResourceWriteResult> CreateAsync(
         CreateResourceRequest request,
-        PrincipalSnapshot actor,
+        AdministrativeActor actor,
         string correlationId,
         CancellationToken cancellationToken = default)
     {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var authorization = await AdministrativeAuthorization.CheckAsync(
+            dbContext, timeProvider, actor, PamPermissions.ResourcesManage, cancellationToken);
+        if (authorization != AdministrativeDecision.Allowed)
+        {
+            return new(authorization == AdministrativeDecision.Forbidden
+                ? ResourceWriteKind.Forbidden : ResourceWriteKind.RecentAuthenticationRequired);
+        }
+
         var now = timeProvider.GetUtcNow();
 
         var resource = new ManagedResource
@@ -45,18 +56,19 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
             Environment = request.Environment.Trim(),
             IsActive = request.IsActive,
             CreatedAt = now.UtcDateTime,
-            CreatedByPrincipalId = actor.Id,
+            CreatedByPrincipalId = actor.Principal.Id,
             ModifiedAt = now.UtcDateTime,
-            ModifiedByPrincipalId = actor.Id
+            ModifiedByPrincipalId = actor.Principal.Id
         };
 
         dbContext.ManagedResources.Add(resource);
         dbContext.AuditEvents.Add(CreateAuditEvent(
-            "resource.created", resource, actor, now.UtcDateTime, correlationId));
+            "resource.created", resource, actor.Principal, now.UtcDateTime, correlationId));
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
-        return new ResourceResponse(
+        return new(ResourceWriteKind.Succeeded, new ResourceResponse(
             resource.PublicId,
             resource.Name,
             resource.Description,
@@ -64,7 +76,7 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
             resource.Environment,
             resource.IsActive,
             resource.CreatedAt,
-            resource.ModifiedAt);
+            resource.ModifiedAt));
     }
 
     public async Task<ResourceWriteResult> UpdateAsync(
