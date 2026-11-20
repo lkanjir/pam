@@ -81,7 +81,7 @@ internal sealed class ResourceTestContext : IAsyncDisposable
             database, clock, long.Parse(principalId, CultureInfo.InvariantCulture), resource, application);
     }
 
-    public async Task AuthenticateAsync()
+    public async Task AuthenticateAsync(bool includeResourceVersion = true)
     {
         using var login = await Client.GetAsync("/login");
         login.EnsureSuccessStatusCode();
@@ -91,7 +91,10 @@ internal sealed class ResourceTestContext : IAsyncDisposable
         SessionTestHost.UpdateCookie(Client, antiforgery);
         var tokens = await antiforgery.Content.ReadFromJsonAsync<AntiforgeryTokenResponse>();
         Client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", tokens!.RequestToken);
-        await RefreshVersionAsync();
+        if (includeResourceVersion)
+        {
+            await RefreshVersionAsync();
+        }
     }
 
     public async Task RefreshVersionAsync(string? url = null)

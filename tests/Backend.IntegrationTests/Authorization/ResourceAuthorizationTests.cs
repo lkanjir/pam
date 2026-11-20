@@ -25,7 +25,7 @@ public sealed class ResourceAuthorizationTests(PostgresFixture postgres, RedisFi
         // Arrange
         await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection,
             roles: roles.Split(',', StringSplitOptions.RemoveEmptyEntries));
-        await test.AuthenticateAsync();
+        await test.AuthenticateAsync(includeResourceVersion: false);
 
         // Act
         using var response = await test.Client.GetAsync("/api/resources?requestable=false");
@@ -50,7 +50,7 @@ public sealed class ResourceAuthorizationTests(PostgresFixture postgres, RedisFi
     {
         // Arrange
         await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection, roles: ["admin"]);
-        await test.AuthenticateAsync();
+        await test.AuthenticateAsync(includeResourceVersion: false);
         var assignment = await test.Database.Context.PamRoleAssignments.SingleAsync(a => a.PrincipalId == test.ActorId);
         test.Database.Context.PamRoleAssignments.Remove(assignment);
         await test.Database.Context.SaveChangesAsync();

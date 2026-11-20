@@ -35,6 +35,29 @@ public sealed class PermissionPolicyTests
         Assert.Equal(allowed, result.Succeeded);
     }
 
+    [Theory]
+    [InlineData("user", true)]
+    [InlineData("admin,user", true)]
+    [InlineData("approver,user", true)]
+    [InlineData("admin", false)]
+    [InlineData("approver", false)]
+    [InlineData("User", false)]
+    [InlineData("", false)]
+    public async Task Authorize_OwnerRead_RequiresExplicitUserCapability(string roles, bool allowed)
+    {
+        // Arrange
+        using var services = new ServiceCollection().AddLogging().AddPamAuthorization().BuildServiceProvider();
+        var authorization = services.GetRequiredService<IAuthorizationService>();
+        var identity = new ClaimsIdentity(roles.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(role => new Claim(PamClaimTypes.Role, role)), "test", "name", PamClaimTypes.Role);
+
+        // Act
+        var result = await authorization.AuthorizeAsync(new ClaimsPrincipal(identity), PamPermissions.RequestsReadOwn);
+
+        // Assert
+        Assert.Equal(allowed, result.Succeeded);
+    }
+
     [Fact]
     public async Task Authorize_UnknownPermission_DoesNotFallBackToAuthenticatedAccess()
     {
