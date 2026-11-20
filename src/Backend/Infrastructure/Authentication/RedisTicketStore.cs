@@ -59,6 +59,7 @@ public sealed class RedisTicketStore : ISessionTicketStore
         {
             var sessionId = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
             var redisKey = GetRedisKey(sessionId);
+            ticket.Properties.Items[SessionTicketMetadata.SessionIdHash] = SessionIdentifier.Hash(sessionId);
             var payload = Protect(ticket, redisKey);
             var ttl = GetTimeToLive(ticket);
 
@@ -86,6 +87,7 @@ public sealed class RedisTicketStore : ISessionTicketStore
         }
 
         var redisKey = GetRedisKey(key);
+        ticket.Properties.Items[SessionTicketMetadata.SessionIdHash] = SessionIdentifier.Hash(key);
         var payload = Protect(ticket, redisKey);
         for (var attempt = 0; attempt < 8; attempt++)
         {
@@ -128,8 +130,14 @@ public sealed class RedisTicketStore : ISessionTicketStore
         var value = await _database.StringGetAsync(redisKey);
 
         var ticket = Unprotect(value, redisKey);
-        return ticket?.Properties.ExpiresUtc is { } expiresAt && expiresAt > _timeProvider.GetUtcNow()
-            ? ticket : null;
+        if (ticket?.Properties.ExpiresUtc is not { } expiresAt || expiresAt <= _timeProvider.GetUtcNow())
+        {
+            return null;
+        }
+
+        // Derive from the actual storage key, including legacy tickets; never trust a caller's metadata value.
+        ticket.Properties.Items[SessionTicketMetadata.SessionIdHash] = SessionIdentifier.Hash(key);
+        return ticket;
     }
 
     private AuthenticationTicket? Unprotect(RedisValue value, string redisKey)
