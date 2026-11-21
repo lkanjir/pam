@@ -473,6 +473,15 @@ one SQL snapshot. Disabled principals/rules and inactive or retired parents rema
 inspectable. Configured eligibility, parent availability and resource visibility
 remain separate facts; this read creates no access.
 
+Delivered eligibility grant: `PUT /api/principals/{id}/eligibility/{resourceId}/{entitlementId}`
+requires `eligibility.assign`, recent-auth, a reason and principal If-Match. It
+locks actor/target principals then the resource, requires an enabled User target,
+validates the entitlement's parent and atomically enables the rule with
+`eligibility.granted` audit and a new principal ETag. Own eligibility is allowed
+only with existing User capability. Inactive configuration can be prepared;
+retired/missing/wrong-parent objects return 404. No view, role or target grant is
+created. A current-version enabled-rule retry is a no-op. Success returns 204.
+
 ### Endpoint and operation matrix
 
 These are target contracts; new route names are proposed until their slice is

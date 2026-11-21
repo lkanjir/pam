@@ -15,4 +15,5 @@ public static class PamPermissions
     public const string ResourceAccessRead = "resource_access.read";
     public const string ResourceAccessAssign = "resource_access.assign";
     public const string EligibilityRead = "eligibility.read";
+    public const string EligibilityAssign = "eligibility.assign";
 }
