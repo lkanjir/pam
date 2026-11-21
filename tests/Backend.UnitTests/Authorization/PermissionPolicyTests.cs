@@ -15,6 +15,7 @@ public sealed class PermissionPolicyTests
     [InlineData(PamPermissions.RolesAssign, true)]
     [InlineData(PamPermissions.ResourceAccessAssign, true)]
     [InlineData(PamPermissions.EligibilityAssign, true)]
+    [InlineData(PamPermissions.ApprovalAuthorityAssign, true)]
     [InlineData(PamPermissions.ResourcesReadAll, false)]
     [InlineData(PamPermissions.ResourcesReadScoped, false)]
     [InlineData(PamPermissions.PrincipalsRead, false)]
