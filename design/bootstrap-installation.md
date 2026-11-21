@@ -29,12 +29,15 @@ pending/completed state with an installation ETag. Reading an uninitialized
 installation never creates one. Already administered databases can continue
 without installation state; the installer is not an account-recovery mechanism.
 
-The next delivery slice adds authenticated permanent-admin handover. Until that
-slice is present, initialization is for development/review only. Handover must
-require a real permanent Admin login, recent authentication, CSRF protection,
-the installation ETag and a reason. It must atomically retire the bootstrap
-identity and all its permissions, record completion and retain audit references.
-No reset or reactivation API will be provided. After successful handover the
+`POST /api/authorization/bootstrap/complete` requires a permanent Admin's actual
+authenticated session, recent original authentication, CSRF protection, the
+installation ETag and a reason. It atomically retires the bootstrap identity and
+all its permissions, records completion and retains audit references. A current
+ETag retry after completion is a no-op; stale versions return 412. No reset or
+reactivation API exists. Assigning Admin alone does not complete installation;
+the permanent administrator must log in and call the authenticated endpoint.
+Redis cleanup is independent: current DB identity checks reject the retired
+account immediately even when Redis cleanup is unavailable. After handover the
 operator disables/deletes the temporary Keycloak user and destroys its secret.
 The retained PAM identity is disabled, rather than deleted, because audit and
 creator foreign keys must remain valid.

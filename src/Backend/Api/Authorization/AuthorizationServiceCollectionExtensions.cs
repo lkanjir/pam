@@ -18,6 +18,7 @@ public static class AuthorizationServiceCollectionExtensions
             .AddPolicy(PamPolicies.PermanentAdministrator, policy => policy.RequireAuthenticatedUser()
                 .RequireAssertion(context => !context.User.HasClaim(PamClaimTypes.Bootstrap, "true")))
             .AddPamPermission(PamPermissions.BootstrapRead)
+            .AddPamPermission(PamPermissions.BootstrapComplete)
             .AddPamPermission(PamPermissions.RequestsCreate)
             .AddPamPermission(PamPermissions.RequestsReadOwn)
             .AddPamPermission(PamPermissions.ResourcesReadAll)
