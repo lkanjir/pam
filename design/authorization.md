@@ -629,6 +629,16 @@ Update existing fixtures in implementation commits when required to preserve tes
     grant/provisioning lifecycle before approving this implementation scope.
     Repeat focused and full checks for the actual approval feature; the baseline
     gate does not substitute for validating its new state transitions.
+12. **First-start onboarding — BOOTSTRAP-UX-01 (planned).** Include in Sprint 2
+    planning or the frontend-onboarding milestone. Automate temporary Keycloak
+    user/PAM initialization, provide installation-specific credentials and guide
+    permanent-Admin setup/login/handover without manual account-bootstrap SQL.
+    Keep bootstrap setup-only; operational configuration uses the permanent Admin.
+    Automate retryable Keycloak retirement without reopening completed PAM setup.
+    See the [first-start follow-up](bootstrap-installation.md#planned-first-start-experience)
+    for the user flow, security boundaries and acceptance criteria. This is an
+    installation/frontend feature, not unfinished baseline authorization; reviewed
+    production schema migrations remain unchanged.
 
 Permission constants, methods, DTO fields and migrations appear only with the slice
 that uses them. The requester/public-ID paging index and bounded orphan session-lease cleanup

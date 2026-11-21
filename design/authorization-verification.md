@@ -104,3 +104,14 @@ existing collection would change what clients can select and is not a safe fix.
 - Review/merge the baseline before starting scoped approval reads and the complete
   decision/grant/provisioning transaction. Groups, custom roles and actual approval
   decisions are intentionally outside this delivery.
+
+## Planned onboarding follow-up
+
+Track **BOOTSTRAP-UX-01** in Sprint 2 planning or the frontend-onboarding milestone:
+automatically provision the temporary Keycloak/PAM bootstrap identity, guide setup
+and verified permanent-Admin handover, then automate Keycloak retirement. The
+[first-start plan](bootstrap-installation.md#planned-first-start-experience) records
+the remaining installer/frontend work and acceptance criteria. This future flow
+replaces manual account-bootstrap SQL; it does not change production schema
+migration policy. Existing automated baseline results above do not claim this
+onboarding automation is implemented or tested.
