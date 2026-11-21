@@ -16,7 +16,7 @@ internal static class AdministrativeAuthorization
         // The caller owns the transaction. Authorization readers share this lock;
         // role/status writers take its exclusive counterpart before changing grants.
         var principal = await database.Principals
-            .FromSql($"SELECT * FROM principals WHERE id = {actor.Principal.Id} FOR SHARE")
+            .FromSql($"SELECT *, xmin FROM principals WHERE id = {actor.Principal.Id} FOR SHARE")
             .AsNoTracking().SingleOrDefaultAsync(cancellationToken);
         if (principal is null || !principal.IsEnabled || principal.PublicId != actor.Principal.PublicId
             || principal.Issuer != actor.Principal.Issuer || principal.Subject != actor.Principal.Subject)

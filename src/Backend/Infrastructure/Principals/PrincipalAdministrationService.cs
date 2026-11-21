@@ -1,5 +1,5 @@
-using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using Application.Authorization;
 using Application.Common.Pagination;
 using Application.Principals;
@@ -78,7 +78,8 @@ public sealed class PrincipalAdministrationService(PamDbContext database, TimePr
         database.Principals.AsNoTracking().Where(principal => principal.PublicId == id)
             .Select(principal => new PrincipalResponse(principal.PublicId, principal.Issuer, principal.Subject,
                 principal.DisplayName, principal.IsEnabled, new DateTimeOffset(principal.CreatedAt, TimeSpan.Zero),
-                new DateTimeOffset(principal.ModifiedAt, TimeSpan.Zero)))
+                new DateTimeOffset(principal.ModifiedAt, TimeSpan.Zero))
+            { Version = principal.Version })
             .SingleOrDefaultAsync(cancellationToken);
 
     public async Task<CursorPage<PrincipalResponse>> ListAsync(int limit, PrincipalCursor? cursor,

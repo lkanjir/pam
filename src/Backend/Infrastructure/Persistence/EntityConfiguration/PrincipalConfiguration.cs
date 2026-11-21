@@ -19,6 +19,7 @@ public sealed class PrincipalConfiguration : IEntityTypeConfiguration<Principal>
         builder.Property(e => e.IsEnabled).IsRequired();
         builder.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
         builder.Property(e => e.ModifiedAt).HasDefaultValueSql("now()");
+        builder.Property(e => e.Version).IsRowVersion().HasColumnName("xmin");
 
         builder.HasIndex(e => e.PublicId).IsUnique();
         builder.HasIndex(e => new { e.Issuer, e.Subject }).IsUnique();

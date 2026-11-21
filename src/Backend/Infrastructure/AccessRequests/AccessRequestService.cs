@@ -106,7 +106,7 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
         // the row lock, so a concurrent identical submission observes the committed winner without retries
         // or provider-exception classification. The unique database index remains the final constraint.
         var principal = await dbContext.Principals
-            .FromSql($"SELECT * FROM principals WHERE id = {requester.Id} FOR UPDATE")
+            .FromSql($"SELECT *, xmin FROM principals WHERE id = {requester.Id} FOR UPDATE")
             .AsNoTracking()
             .SingleOrDefaultAsync(cancellationToken);
         if (principal is null || !principal.IsEnabled || principal.PublicId != requester.PublicId

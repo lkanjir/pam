@@ -21,6 +21,7 @@ public sealed class Principal
     public bool IsEnabled { get; private set; }
     public DateTime CreatedAt { get; init; }
     public DateTime ModifiedAt { get; private set; }
+    public uint Version { get; private set; }
 
     public ICollection<PamRoleAssignment> RoleAssignments { get; } = new List<PamRoleAssignment>();
     public ICollection<EligibilityRule> EligibilityRules { get; } = new List<EligibilityRule>();

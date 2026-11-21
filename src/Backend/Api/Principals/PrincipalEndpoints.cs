@@ -1,5 +1,6 @@
 using Api.Authentication;
 using Api.Authorization;
+using Api.Resources;
 using Application.Authorization;
 using Application.Common.Pagination;
 using Application.Principals;
@@ -29,7 +30,8 @@ public static class PrincipalEndpoints
             .WithName(GetByIdRouteName)
             .WithSummary("Read a PAM identity mapping")
             .WithDescription("Requires principals.read. Returns the immutable issuer/subject mapping and current enabled status, "
-                + "including disabled accounts. No passwords or identity-provider credentials are returned.")
+                + "including disabled accounts. Returns the principal aggregate's strong ETag for conditional administrative changes. "
+                + "No passwords or identity-provider credentials are returned.")
             .RequireAuthorization(PamPermissions.PrincipalsRead)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -53,10 +55,14 @@ public static class PrincipalEndpoints
         IPrincipalAdministrationService service, CancellationToken cancellationToken) =>
         TypedResults.Ok(await service.ListAsync(query.Limit, query.Cursor, cancellationToken));
 
-    private static async Task<Results<Ok<PrincipalResponse>, NotFound>> GetById(Guid id,
+    private static async Task<Results<Ok<PrincipalResponse>, NotFound>> GetById(Guid id, HttpContext context,
         IPrincipalAdministrationService service, CancellationToken cancellationToken)
     {
         var principal = await service.GetByIdAsync(id, cancellationToken);
+        if (principal is not null)
+        {
+            context.Response.Headers.ETag = ResourceEtags.Format(principal.Version);
+        }
         return principal is null ? TypedResults.NotFound() : TypedResults.Ok(principal);
     }
 
