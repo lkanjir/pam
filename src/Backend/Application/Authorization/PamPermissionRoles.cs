@@ -7,14 +7,14 @@ public static class PamPermissionRoles
     {
         PamPermissions.ResourcesManage or PamPermissions.PrincipalsManage => true,
         PamPermissions.ResourcesReadAll or PamPermissions.RequestsReadOwn or PamPermissions.RequestsCreate
-            or PamPermissions.PrincipalsRead => false,
+            or PamPermissions.PrincipalsRead or PamPermissions.RolesRead => false,
         _ => throw new ArgumentException("The permission is not registered.", nameof(permission))
     };
 
     public static string[] For(string permission) => permission switch
     {
         PamPermissions.ResourcesReadAll or PamPermissions.ResourcesManage or PamPermissions.PrincipalsRead
-            or PamPermissions.PrincipalsManage => [PamRoleCodes.Admin],
+            or PamPermissions.PrincipalsManage or PamPermissions.RolesRead => [PamRoleCodes.Admin],
         PamPermissions.RequestsReadOwn or PamPermissions.RequestsCreate => [PamRoleCodes.User],
         _ => throw new ArgumentException("The permission is not registered.", nameof(permission))
     };

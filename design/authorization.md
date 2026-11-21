@@ -400,6 +400,11 @@ existing role codes/data, use a reviewed migration/data-transition procedure and
 manual development data. New databases do not get a hidden production Admin seed.
 Existing session tickets missing auth_time remain unsuitable for sensitive actions.
 
+Delivered role read: `GET /api/principals/{id}/roles` requires `roles.read`,
+returns the explicitly assigned known bundles (at most three), and exposes the
+principal aggregate ETag. Disabled principals retain their assignments. Unknown
+DB role labels are omitted and do not grant capabilities.
+
 ### Endpoint and operation matrix
 
 These are target contracts; new route names are proposed until their slice is

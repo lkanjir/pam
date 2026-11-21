@@ -9,4 +9,5 @@ public static class PamPermissions
     public const string ResourcesManage = "resources.manage";
     public const string PrincipalsRead = "principals.read";
     public const string PrincipalsManage = "principals.manage";
+    public const string RolesRead = "roles.read";
 }
