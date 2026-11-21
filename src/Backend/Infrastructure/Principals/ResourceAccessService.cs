@@ -148,15 +148,23 @@ public sealed class ResourceAccessService(PamDbContext database, TimeProvider cl
         return new(PrincipalWriteKind.Succeeded, version);
     }
 
-    public async Task<ResourceAccessPage?> ListAsync(Guid principalId, int limit, ResourceCursor? cursor,
-        CancellationToken cancellationToken = default)
+    public Task<ResourceAccessPage?> ListAsync(Guid principalId, int limit, ResourceCursor? cursor,
+        CancellationToken cancellationToken = default) =>
+        ListBindingsAsync(principalId, limit, cursor, ResourceBindingKind.ViewResource, cancellationToken);
+
+    Task<ResourceAccessPage?> IApprovalAuthorityService.ListAsync(Guid principalId, int limit, ResourceCursor? cursor,
+        CancellationToken cancellationToken) =>
+        ListBindingsAsync(principalId, limit, cursor, ResourceBindingKind.ApproveRequests, cancellationToken);
+
+    private async Task<ResourceAccessPage?> ListBindingsAsync(Guid principalId, int limit, ResourceCursor? cursor,
+        ResourceBindingKind kind, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, 100);
         // Administrative inspection deliberately retains retired parents and inactive bindings.
         var bindings = from binding in database.ResourcePrincipalBindings.IgnoreQueryFilters()
                        join resource in database.ManagedResources.IgnoreQueryFilters() on binding.ResourceId equals resource.Id
-                       where binding.Kind == ResourceBindingKind.ViewResource
+                       where binding.Kind == kind
                        select new { Binding = binding, Resource = resource };
         if (cursor is not null)
         {

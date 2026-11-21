@@ -501,6 +501,12 @@ support. Requester queries/submissions still require an explicit ViewResource
 relationship, even for combined User/Approver accounts. Role removal deactivates
 unsupported authority atomically with exact per-relationship audit.
 
+Delivered authority inspection: `GET /api/principals/{id}/approval-authority`
+requires `approval_authority.read` and returns a bounded resource-ID page with
+principal ETag from one SQL snapshot. Inactive authority, disabled principals and
+retired resources remain inspectable. View and authority reads select their exact
+relationship kind and never merge the two administrative collections.
+
 ### Endpoint and operation matrix
 
 These are target contracts; new route names are proposed until their slice is

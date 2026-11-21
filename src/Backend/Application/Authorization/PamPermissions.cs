@@ -17,4 +17,5 @@ public static class PamPermissions
     public const string EligibilityRead = "eligibility.read";
     public const string EligibilityAssign = "eligibility.assign";
     public const string ApprovalAuthorityAssign = "approval_authority.assign";
+    public const string ApprovalAuthorityRead = "approval_authority.read";
 }

@@ -2,6 +2,7 @@ using Api.Authentication;
 using Api.Authorization;
 using Api.Resources;
 using Application.Authorization;
+using Application.Common.Pagination;
 using Application.Principals;
 using Application.Sessions;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -13,6 +14,19 @@ public static class ApprovalAuthorityEndpoints
 {
     public static IEndpointRouteBuilder MapApprovalAuthorityEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/principals/{id:guid}/approval-authority", List)
+            .WithTags("Approval authority")
+            .WithName("Principal.ApprovalAuthority.List")
+            .WithSummary("Inspect a principal's resource approval authority")
+            .WithDescription("Requires approval_authority.read. Includes inactive authority and retired resources for enabled or disabled principals. "
+                + "Each relationship covers all current and future entitlements of that resource; this read changes no authority. "
+                + "Uses ascending resource public-ID pagination; limit defaults to 20, range 1–100. Returns the principal ETag from the same SQL snapshot. "
+                + "No recent-auth is required for this read.")
+            .RequireAuthorization(PamPermissions.ApprovalAuthorityRead)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
         endpoints.MapPut("/principals/{id:guid}/approval-authority/{resourceId:guid}", Assign).WithResourceVersion()
             .WithTags("Approval authority")
             .WithName("Principal.ApprovalAuthority.Assign")
@@ -31,6 +45,19 @@ public static class ApprovalAuthorityEndpoints
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
         return endpoints;
+    }
+
+    private static async Task<Results<Ok<CursorPage<ResourceAccessResponse>>, NotFound>> List(Guid id,
+        [AsParameters] ResourceAccessListQuery query, HttpContext context, IApprovalAuthorityService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ListAsync(id, query.Limit, query.Cursor, cancellationToken);
+        if (result is null)
+        {
+            return TypedResults.NotFound();
+        }
+        context.Response.Headers.ETag = ResourceEtags.Format(result.Version);
+        return TypedResults.Ok(result.Page);
     }
 
     private static async Task<Results<NoContent, UnauthorizedHttpResult, ProblemHttpResult>> Assign(Guid id, Guid resourceId,
