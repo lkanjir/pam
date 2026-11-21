@@ -222,16 +222,21 @@ public sealed class BootstrapHandoverTests(PostgresFixture postgres, RedisFixtur
     }
 
     [Theory]
-    [InlineData("disabled")]
-    [InlineData("role-removed")]
-    [InlineData("public-id")]
-    [InlineData("issuer")]
-    [InlineData("subject")]
-    public async Task Complete_DirectCallerWithStaleTrackedIdentityOrRole_CannotBypassCurrentDatabaseAuthorization(string fault)
+    [InlineData("disabled", BootstrapWriteKind.Forbidden)]
+    [InlineData("role-removed", BootstrapWriteKind.Forbidden)]
+    [InlineData("public-id", BootstrapWriteKind.Forbidden)]
+    [InlineData("issuer", BootstrapWriteKind.Forbidden)]
+    [InlineData("subject", BootstrapWriteKind.Forbidden)]
+    [InlineData("bootstrap", BootstrapWriteKind.Forbidden)]
+    [InlineData("no-time", BootstrapWriteKind.RecentAuthenticationRequired)]
+    [InlineData("old-time", BootstrapWriteKind.RecentAuthenticationRequired)]
+    [InlineData("empty-reason", BootstrapWriteKind.InvalidRequest)]
+    [InlineData("long-reason", BootstrapWriteKind.InvalidRequest)]
+    public async Task Complete_DirectCaller_RechecksCurrentIdentityFreshnessAndValidation(string fault, BootstrapWriteKind expected)
     {
         // Arrange
         await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection);
-        await SeedBootstrapAsync(test);
+        var bootstrap = await SeedBootstrapAsync(test);
         var actor = await ActorAsync(test);
         if (fault == "disabled")
         {
@@ -242,7 +247,7 @@ public sealed class BootstrapHandoverTests(PostgresFixture postgres, RedisFixtur
         {
             await test.Database.Context.PamRoleAssignments.Where(value => value.PrincipalId == test.ActorId).ExecuteDeleteAsync();
         }
-        else
+        else if (fault is "issuer" or "subject" or "public-id")
         {
             actor = actor with
             {
@@ -254,16 +259,49 @@ public sealed class BootstrapHandoverTests(PostgresFixture postgres, RedisFixtur
                 }
             };
         }
+        else if (fault == "bootstrap")
+        {
+            actor = new(new PrincipalSnapshot(bootstrap.Id, bootstrap.PublicId, bootstrap.DisplayName, bootstrap.Issuer, bootstrap.Subject), test.Clock.Now);
+        }
+        else if (fault is "no-time" or "old-time")
+        {
+            actor = actor with { AuthenticatedAt = fault == "no-time" ? null : test.Clock.Now.AddSeconds(-601) };
+        }
+        var request = new CompleteBootstrapRequest
+        { Reason = fault switch { "empty-reason" => " ", "long-reason" => new string('x', 501), _ => "Review" } };
         var installation = await test.Database.Context.PamInstallations.AsNoTracking().SingleAsync();
 
         // Act
-        var result = await new BootstrapService(test.Database.Context, test.Clock).CompleteAsync(Reason(), actor,
+        var result = await new BootstrapService(test.Database.Context, test.Clock).CompleteAsync(request, actor,
             installation.Version, "direct");
 
         // Assert
-        Assert.Equal(BootstrapWriteKind.Forbidden, result.Kind);
+        Assert.Equal(expected, result.Kind);
         await AssertPendingAsync(test);
         Assert.False(await test.Database.Context.AuditEvents.AnyAsync(value => value.EventType == "bootstrap.completed"));
+    }
+
+    [Fact]
+    public async Task Complete_OpenApi_DocumentsMethodVersionAndSecurityFailures()
+    {
+        // Arrange
+        await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection);
+
+        // Act
+        using var response = await test.Client.GetAsync("/openapi/v1.json");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var operation = document.RootElement.GetProperty("paths").GetProperty(CompleteUrl).GetProperty("post");
+        Assert.Equal("Bootstrap.Complete", operation.GetProperty("operationId").GetString());
+        var version = Assert.Single(operation.GetProperty("parameters").EnumerateArray(),
+            value => value.GetProperty("name").GetString() == "If-Match");
+        Assert.True(version.GetProperty("required").GetBoolean());
+        foreach (string status in new[] { "200", "400", "401", "403", "409", "412", "428" })
+        {
+            Assert.True(operation.GetProperty("responses").TryGetProperty(status, out _));
+        }
     }
 
     [Fact]
