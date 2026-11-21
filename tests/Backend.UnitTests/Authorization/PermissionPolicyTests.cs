@@ -10,6 +10,26 @@ namespace Backend.UnitTests.Authorization;
 public sealed class PermissionPolicyTests
 {
     [Theory]
+    [InlineData(PamPermissions.ResourcesManage, true)]
+    [InlineData(PamPermissions.PrincipalsManage, true)]
+    [InlineData(PamPermissions.ResourcesReadAll, false)]
+    [InlineData(PamPermissions.PrincipalsRead, false)]
+    [InlineData(PamPermissions.RequestsCreate, false)]
+    [InlineData(PamPermissions.RequestsReadOwn, false)]
+    public void AuthenticationAge_DeliveredOperations_HaveExplicitSensitivity(string permission, bool sensitive)
+    {
+        // Act / Assert
+        Assert.Equal(sensitive, PamPermissionRoles.RequiresRecentAuthentication(permission));
+    }
+
+    [Fact]
+    public void AuthenticationAge_UnknownOperation_CannotOptOutOfFreshness()
+    {
+        // Act / Assert
+        Assert.Throws<ArgumentException>(() => PamPermissionRoles.RequiresRecentAuthentication("unknown.operation"));
+    }
+
+    [Theory]
     [InlineData("admin", true, true)]
     [InlineData("admin,user", true, true)]
     [InlineData("user", true, false)]
