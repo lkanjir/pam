@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Application.AccessRequests;
 using Application.Authorization;
 using Application.Bootstrap;
 using Application.Principals;
@@ -8,6 +9,7 @@ using Application.Sessions;
 using Backend.IntegrationTests.Fixtures;
 using Backend.IntegrationTests.Resources;
 using Backend.IntegrationTests.Sessions;
+using Infrastructure.AccessRequests;
 using Infrastructure.Authentication;
 using Infrastructure.Identity;
 using Infrastructure.Persistence.Entities;
@@ -21,6 +23,53 @@ namespace Backend.IntegrationTests.Authorization;
 [Collection("Cookie sessions")]
 public sealed class BootstrapBoundaryTests(PostgresFixture postgres, RedisFixture redis)
 {
+    [Theory]
+    [InlineData("detail")]
+    [InlineData("visible")]
+    [InlineData("requestable")]
+    public async Task Bootstrap_DirectScopedRead_RemainsHiddenDespiteEveryBundleAndAssignment(string operation)
+    {
+        // Arrange
+        await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection, roles: ["admin", "user", "approver"]);
+        await BootstrapTestData.MarkActorAsync(test);
+        await Backend.IntegrationTests.AccessRequests.AccessRequestTestData.SeedEntitlementAsync(test);
+        var resources = new ResourceService(test.Database.Context, test.Clock);
+
+        // Act
+        int disclosed = operation switch
+        {
+            "detail" => await resources.GetScopedByIdAsync(test.Resource.PublicId, test.ActorId) is null ? 0 : 1,
+            "visible" => (await resources.ListVisibleAsync(test.ActorId, 20, null)).Items.Count,
+            _ => (await resources.ListRequestableAsync(test.ActorId, 20, null)).Items.Count
+        };
+
+        // Assert
+        Assert.Equal(0, disclosed);
+        Assert.False(await test.Database.Context.AuditEvents.AnyAsync());
+    }
+
+    [Fact]
+    public async Task Bootstrap_DirectSubmission_RemainsForbiddenDespiteEveryBundleAndAssignment()
+    {
+        // Arrange
+        await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection, roles: ["admin", "user", "approver"]);
+        await BootstrapTestData.MarkActorAsync(test);
+        var entitlement = await Backend.IntegrationTests.AccessRequests.AccessRequestTestData.SeedEntitlementAsync(test);
+        var principal = await test.Database.Context.Principals.AsNoTracking().SingleAsync(value => value.Id == test.ActorId);
+        var snapshot = new PrincipalSnapshot(principal.Id, principal.PublicId, principal.DisplayName, principal.Issuer, principal.Subject);
+
+        // Act
+        var submission = await new AccessRequestService(test.Database.Context, test.Clock).SubmitAsync(
+            Backend.IntegrationTests.AccessRequests.AccessRequestTestData.Request(test, entitlement), "bootstrap-direct", snapshot, "direct");
+
+        // Assert
+        Assert.Equal(AccessRequestSubmissionKind.Forbidden, submission.Kind);
+        Assert.Null(submission.Request);
+        Assert.False(await test.Database.Context.AccessRequests.AnyAsync());
+        Assert.False(await test.Database.Context.PolicyEvaluations.AnyAsync());
+        Assert.False(await test.Database.Context.AuditEvents.AnyAsync());
+    }
+
     [Theory]
     [InlineData("/api/resources")]
     [InlineData("/api/resources/visible")]
