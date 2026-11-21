@@ -1,3 +1,4 @@
+using Api.Authentication;
 using Application.Authorization;
 using Microsoft.AspNetCore.Authorization;
 
@@ -9,40 +10,34 @@ public static class AuthorizationServiceCollectionExtensions
     {
         services.AddSingleton<IStartupFilter, PamEndpointAuthorizationStartupFilter>();
         services.AddSingleton<IAuthorizationHandler, PamRecentAuthenticationHandler>();
+        services.AddSingleton<IAuthorizationHandler, PamBootstrapOperationHandler>();
         services.AddSingleton<IAuthorizationMiddlewareResultHandler, PamAuthorizationResultHandler>();
         services.AddAuthorizationBuilder()
             .AddPolicy(PamPolicies.RecentAuthentication, policy =>
                 policy.RequireAuthenticatedUser().AddRequirements(new PamRecentAuthenticationRequirement()))
-            .AddPolicy(PamPermissions.RequestsCreate, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.RequestsCreate)))
-            .AddPolicy(PamPermissions.RequestsReadOwn, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.RequestsReadOwn)))
-            .AddPolicy(PamPermissions.ResourcesReadAll, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.ResourcesReadAll)))
-            .AddPolicy(PamPermissions.ResourcesReadScoped, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.ResourcesReadScoped)))
-            .AddPolicy(PamPermissions.ResourcesManage, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.ResourcesManage)))
-            .AddPolicy(PamPermissions.PrincipalsRead, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.PrincipalsRead)))
-            .AddPolicy(PamPermissions.PrincipalsManage, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.PrincipalsManage)))
-            .AddPolicy(PamPermissions.RolesRead, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.RolesRead)))
-            .AddPolicy(PamPermissions.RolesAssign, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.RolesAssign)))
-            .AddPolicy(PamPermissions.ResourceAccessRead, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.ResourceAccessRead)))
-            .AddPolicy(PamPermissions.ResourceAccessAssign, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.ResourceAccessAssign)))
-            .AddPolicy(PamPermissions.EligibilityRead, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.EligibilityRead)))
-            .AddPolicy(PamPermissions.EligibilityAssign, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.EligibilityAssign)))
-            .AddPolicy(PamPermissions.ApprovalAuthorityAssign, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.ApprovalAuthorityAssign)))
-            .AddPolicy(PamPermissions.ApprovalAuthorityRead, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.ApprovalAuthorityRead)));
+            .AddPolicy(PamPolicies.PermanentAdministrator, policy => policy.RequireAuthenticatedUser()
+                .RequireAssertion(context => !context.User.HasClaim(PamClaimTypes.Bootstrap, "true")))
+            .AddPamPermission(PamPermissions.BootstrapRead)
+            .AddPamPermission(PamPermissions.RequestsCreate)
+            .AddPamPermission(PamPermissions.RequestsReadOwn)
+            .AddPamPermission(PamPermissions.ResourcesReadAll)
+            .AddPamPermission(PamPermissions.ResourcesReadScoped)
+            .AddPamPermission(PamPermissions.ResourcesManage)
+            .AddPamPermission(PamPermissions.PrincipalsRead)
+            .AddPamPermission(PamPermissions.PrincipalsManage)
+            .AddPamPermission(PamPermissions.RolesRead)
+            .AddPamPermission(PamPermissions.RolesAssign)
+            .AddPamPermission(PamPermissions.ResourceAccessRead)
+            .AddPamPermission(PamPermissions.ResourceAccessAssign)
+            .AddPamPermission(PamPermissions.EligibilityRead)
+            .AddPamPermission(PamPermissions.EligibilityAssign)
+            .AddPamPermission(PamPermissions.ApprovalAuthorityAssign)
+            .AddPamPermission(PamPermissions.ApprovalAuthorityRead);
         return services;
     }
+
+    private static AuthorizationBuilder AddPamPermission(this AuthorizationBuilder builder, string permission) =>
+        builder.AddPolicy(permission, policy => policy.RequireAuthenticatedUser()
+            .RequireRole(PamPermissionRoles.For(permission)).AddRequirements(new PamBootstrapOperationRequirement(permission)));
+
 }

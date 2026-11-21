@@ -516,6 +516,54 @@ namespace Infrastructure.Persistence.Migrations
                     b.ToTable("managed_resources", (string)null);
                 });
 
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.PamInstallation", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    b.Property<long>("BootstrapPrincipalId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("bootstrap_principal_id");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<long?>("CompletedByPrincipalId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("completed_by_principal_id");
+
+                    b.Property<DateTime>("InitializedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("initialized_at");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pam_installation");
+
+                    b.HasIndex("BootstrapPrincipalId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_pam_installation_bootstrap_principal_id");
+
+                    b.HasIndex("CompletedByPrincipalId")
+                        .HasDatabaseName("ix_pam_installation_completed_by_principal_id");
+
+                    b.ToTable("pam_installation", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_pam_installation_completion", "(completed_at IS NULL) = (completed_by_principal_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_pam_installation_singleton", "id = 1");
+
+                            t.HasCheckConstraint("ck_pam_installation_time", "completed_at IS NULL OR completed_at >= initialized_at");
+                        });
+                });
+
             modelBuilder.Entity("Infrastructure.Persistence.Entities.PamRole", b =>
                 {
                     b.Property<int>("Id")
@@ -945,6 +993,26 @@ namespace Infrastructure.Persistence.Migrations
                     b.Navigation("CreatedByPrincipal");
 
                     b.Navigation("ModifiedByPrincipal");
+                });
+
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.PamInstallation", b =>
+                {
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "BootstrapPrincipal")
+                        .WithMany()
+                        .HasForeignKey("BootstrapPrincipalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pam_installation_principals_bootstrap_principal_id");
+
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "CompletedByPrincipal")
+                        .WithMany()
+                        .HasForeignKey("CompletedByPrincipalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_pam_installation_principals_completed_by_principal_id");
+
+                    b.Navigation("BootstrapPrincipal");
+
+                    b.Navigation("CompletedByPrincipal");
                 });
 
             modelBuilder.Entity("Infrastructure.Persistence.Entities.PamRole", b =>

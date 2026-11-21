@@ -20,6 +20,7 @@ internal static class ResourceScopedAuthorization
                         && database.PamRoleAssignments.Any(assignment => assignment.PrincipalId == principalId
                             && approvalRoles.Contains(assignment.Role.Code)))))
             && database.Principals.Any(principal => principal.Id == principalId && principal.IsEnabled
+                && !database.PamInstallations.Any(installation => installation.BootstrapPrincipalId == principal.Id)
                 && principal.RoleAssignments.Any(assignment => roles.Contains(assignment.Role.Code))));
     }
 

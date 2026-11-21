@@ -14,6 +14,7 @@ public sealed class PamCookieEvents(IPrincipalIdentityReader principalReader) : 
             var current = await principalReader.FindAsync(identity.Issuer, identity.Subject,
                 context.HttpContext.RequestAborted);
             if (current is { IsEnabled: true } && current.Id == identity.Id && current.PublicId == identity.PublicId
+                && current.IsBootstrap == identity.IsBootstrap
                 && current.Roles.ToHashSet(StringComparer.Ordinal).SetEquals(identity.Roles))
             {
                 return;

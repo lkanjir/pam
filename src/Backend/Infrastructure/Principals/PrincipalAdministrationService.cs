@@ -43,6 +43,10 @@ public sealed class PrincipalAdministrationService(PamDbContext database, TimePr
             return new(decision == AdministrativeDecision.Forbidden
                 ? PrincipalWriteKind.Forbidden : PrincipalWriteKind.RecentAuthenticationRequired);
         }
+        if (!enabled && await AdministrativeAuthorization.IsBootstrapPrincipalAsync(database, actor.Principal.Id, cancellationToken))
+        {
+            return new(PrincipalWriteKind.Forbidden);
+        }
         var target = principals.SingleOrDefault(principal => principal.PublicId == id);
         if (target is null)
         {
@@ -51,6 +55,10 @@ public sealed class PrincipalAdministrationService(PamDbContext database, TimePr
         if (target.Id == actor.Principal.Id)
         {
             return new(PrincipalWriteKind.SelfChangeForbidden);
+        }
+        if (await AdministrativeAuthorization.IsBootstrapPrincipalAsync(database, target.Id, cancellationToken))
+        {
+            return new(PrincipalWriteKind.BootstrapProtected);
         }
         if (!Validator.TryValidateObject(request, new ValidationContext(request), null, validateAllProperties: true))
         {

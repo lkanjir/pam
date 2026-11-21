@@ -9,7 +9,8 @@ public static class PamPermissionRoles
             or PamPermissions.ResourceAccessAssign or PamPermissions.EligibilityAssign or PamPermissions.ApprovalAuthorityAssign => true,
         PamPermissions.ResourcesReadAll or PamPermissions.RequestsReadOwn or PamPermissions.RequestsCreate
             or PamPermissions.PrincipalsRead or PamPermissions.RolesRead or PamPermissions.ResourcesReadScoped
-            or PamPermissions.ResourceAccessRead or PamPermissions.EligibilityRead or PamPermissions.ApprovalAuthorityRead => false,
+            or PamPermissions.ResourceAccessRead or PamPermissions.EligibilityRead or PamPermissions.ApprovalAuthorityRead
+            or PamPermissions.BootstrapRead => false,
         _ => throw new ArgumentException("The permission is not registered.", nameof(permission))
     };
 
@@ -18,7 +19,8 @@ public static class PamPermissionRoles
         PamPermissions.ResourcesReadAll or PamPermissions.ResourcesManage or PamPermissions.PrincipalsRead
             or PamPermissions.PrincipalsManage or PamPermissions.RolesRead or PamPermissions.RolesAssign
             or PamPermissions.ResourceAccessRead or PamPermissions.ResourceAccessAssign or PamPermissions.EligibilityRead
-            or PamPermissions.EligibilityAssign or PamPermissions.ApprovalAuthorityAssign or PamPermissions.ApprovalAuthorityRead => [PamRoleCodes.Admin],
+            or PamPermissions.EligibilityAssign or PamPermissions.ApprovalAuthorityAssign or PamPermissions.ApprovalAuthorityRead
+            or PamPermissions.BootstrapRead => [PamRoleCodes.Admin],
         PamPermissions.RequestsReadOwn or PamPermissions.RequestsCreate => [PamRoleCodes.User],
         PamPermissions.ResourcesReadScoped => [PamRoleCodes.User, PamRoleCodes.Approver],
         _ => throw new ArgumentException("The permission is not registered.", nameof(permission))

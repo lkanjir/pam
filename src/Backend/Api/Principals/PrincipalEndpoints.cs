@@ -70,7 +70,7 @@ public static class PrincipalEndpoints
                 + "Self changes and removal of the last enabled Admin are forbidden. Role and resource assignments remain for explicit re-enablement. "
                 + "Repeated disabled state with a current version makes no second audit; stale versions return 412. "
                 + "The account is disabled atomically with its audit, and retained sessions fail their next current-identity validation.")
-            .RequireAuthorization(PamPermissions.PrincipalsManage, PamPolicies.RecentAuthentication)
+            .RequireAuthorization(PamPermissions.PrincipalsManage, PamPolicies.RecentAuthentication, PamPolicies.PermanentAdministrator)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -211,7 +211,7 @@ public static class PrincipalEndpoints
         {
             PrincipalWriteKind.NotFound => StatusCodes.Status404NotFound,
             PrincipalWriteKind.PreconditionFailed => StatusCodes.Status412PreconditionFailed,
-            PrincipalWriteKind.LastAdmin or PrincipalWriteKind.SessionCleanupPending => StatusCodes.Status409Conflict,
+            PrincipalWriteKind.LastAdmin or PrincipalWriteKind.SessionCleanupPending or PrincipalWriteKind.BootstrapProtected => StatusCodes.Status409Conflict,
             PrincipalWriteKind.InvalidRequest => StatusCodes.Status400BadRequest,
             _ => StatusCodes.Status403Forbidden
         };
@@ -221,6 +221,7 @@ public static class PrincipalEndpoints
             PrincipalWriteKind.SelfChangeForbidden => "self_change_forbidden",
             PrincipalWriteKind.LastAdmin => "last_admin",
             PrincipalWriteKind.SessionCleanupPending => "session_cleanup_pending",
+            PrincipalWriteKind.BootstrapProtected => "bootstrap_identity_protected",
             _ => null
         };
         return TypedResults.Problem(statusCode: status,

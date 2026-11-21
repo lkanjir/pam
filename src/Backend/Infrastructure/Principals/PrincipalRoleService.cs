@@ -40,6 +40,10 @@ public sealed class PrincipalRoleService(PamDbContext database, TimeProvider clo
             return new(decision == AdministrativeDecision.Forbidden
                 ? PrincipalWriteKind.Forbidden : PrincipalWriteKind.RecentAuthenticationRequired);
         }
+        if (!assigned && await AdministrativeAuthorization.IsBootstrapPrincipalAsync(database, actor.Principal.Id, cancellationToken))
+        {
+            return new(PrincipalWriteKind.Forbidden);
+        }
         var target = principals.SingleOrDefault(principal => principal.PublicId == principalId);
         if (target is null)
         {
@@ -48,6 +52,10 @@ public sealed class PrincipalRoleService(PamDbContext database, TimeProvider clo
         if (target.Id == actor.Principal.Id)
         {
             return new(PrincipalWriteKind.SelfChangeForbidden);
+        }
+        if (await AdministrativeAuthorization.IsBootstrapPrincipalAsync(database, target.Id, cancellationToken))
+        {
+            return new(PrincipalWriteKind.BootstrapProtected);
         }
         if (roleCode is not (PamRoleCodes.User or PamRoleCodes.Approver or PamRoleCodes.Admin)
             || !Validator.TryValidateObject(request, new ValidationContext(request), null, validateAllProperties: true))

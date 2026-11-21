@@ -35,16 +35,21 @@ public sealed class PamEndpointAuthorizationStartupFilter(IOptions<Authorization
             bool needsRecentAuthentication = false;
             foreach (string name in names)
             {
-                if (options.Value.GetPolicy(name) is null)
+                var policy = options.Value.GetPolicy(name);
+                if (policy is null)
                 {
                     throw new InvalidOperationException($"Endpoint '{endpoint.RoutePattern.RawText}' references unknown policy '{name}'.");
                 }
-                if (name == PamPolicies.RecentAuthentication)
+                if (name is PamPolicies.RecentAuthentication or PamPolicies.PermanentAdministrator)
                 {
                     continue;
                 }
 
                 _ = PamPermissionRoles.For(name);
+                if (!policy.Requirements.OfType<PamBootstrapOperationRequirement>().Any(requirement => requirement.Permission == name))
+                {
+                    throw new InvalidOperationException($"Endpoint '{endpoint.RoutePattern.RawText}' has no bootstrap boundary for '{name}'.");
+                }
                 hasOperation = true;
                 needsRecentAuthentication |= PamPermissionRoles.RequiresRecentAuthentication(name);
             }

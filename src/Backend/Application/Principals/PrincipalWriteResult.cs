@@ -14,7 +14,8 @@ public enum PrincipalWriteKind
     LastAdmin,
     SessionCleanupPending,
     TargetDisabled,
-    TargetMissingCapability
+    TargetMissingCapability,
+    BootstrapProtected
 }
 
 public sealed record PrincipalWriteResult(PrincipalWriteKind Kind, PrincipalResponse? Principal = null);

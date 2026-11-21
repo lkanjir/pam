@@ -115,7 +115,7 @@ public static class ResourceAccessEndpoints
         {
             PrincipalWriteKind.NotFound => StatusCodes.Status404NotFound,
             PrincipalWriteKind.PreconditionFailed => StatusCodes.Status412PreconditionFailed,
-            PrincipalWriteKind.TargetDisabled or PrincipalWriteKind.TargetMissingCapability => StatusCodes.Status409Conflict,
+            PrincipalWriteKind.TargetDisabled or PrincipalWriteKind.TargetMissingCapability or PrincipalWriteKind.BootstrapProtected => StatusCodes.Status409Conflict,
             PrincipalWriteKind.InvalidRequest => StatusCodes.Status400BadRequest,
             _ => StatusCodes.Status403Forbidden
         };
@@ -124,6 +124,7 @@ public static class ResourceAccessEndpoints
             PrincipalWriteKind.RecentAuthenticationRequired => "recent_auth_required",
             PrincipalWriteKind.TargetDisabled => "target_disabled",
             PrincipalWriteKind.TargetMissingCapability => "target_missing_capability",
+            PrincipalWriteKind.BootstrapProtected => "bootstrap_identity_protected",
             _ => null
         };
         return TypedResults.Problem(statusCode: status,

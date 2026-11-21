@@ -109,6 +109,7 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
         var principal = await dbContext.Principals
             .FromSql($"SELECT *, xmin FROM principals WHERE id = {requester.Id} FOR UPDATE")
             .AsNoTracking()
+            .Where(value => !dbContext.PamInstallations.Any(installation => installation.BootstrapPrincipalId == value.Id))
             .SingleOrDefaultAsync(cancellationToken);
         if (principal is null || !principal.IsEnabled || principal.PublicId != requester.PublicId
             || principal.Issuer != requester.Issuer || principal.Subject != requester.Subject)

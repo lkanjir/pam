@@ -71,6 +71,10 @@ public sealed class ResourceAccessService(PamDbContext database, TimeProvider cl
         }
         if (assigned)
         {
+            if (await AdministrativeAuthorization.IsBootstrapPrincipalAsync(database, target.Id, cancellationToken))
+            {
+                return new(PrincipalWriteKind.BootstrapProtected);
+            }
             var supportedRoles = ResourceBindingRoles.For(kind);
             if (!await database.PamRoleAssignments.AnyAsync(assignment => assignment.PrincipalId == target.Id
                 && supportedRoles.Contains(assignment.Role.Code), cancellationToken))

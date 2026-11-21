@@ -58,6 +58,10 @@ public sealed class EligibilityService(PamDbContext database, TimeProvider clock
         }
         if (assigned)
         {
+            if (await AdministrativeAuthorization.IsBootstrapPrincipalAsync(database, target.Id, cancellationToken))
+            {
+                return new(PrincipalWriteKind.BootstrapProtected);
+            }
             var requesterRoles = PamPermissionRoles.For(PamPermissions.RequestsCreate);
             if (!await database.PamRoleAssignments.AnyAsync(assignment => assignment.PrincipalId == target.Id
                 && requesterRoles.Contains(assignment.Role.Code), cancellationToken))

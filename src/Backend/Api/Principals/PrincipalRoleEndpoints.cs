@@ -50,7 +50,7 @@ public static class PrincipalRoleEndpoints
                 + "Removal applies immediately in the DB, including disabled accounts, without waiting for Redis cleanup. "
                 + "Eligibility that loses its supporting requester capability is deactivated with per-relationship audit in the same transaction. "
                 + "An absent role with a current version is a no-op. A later grant does not reactivate dependent assignments.")
-            .RequireAuthorization(PamPermissions.RolesAssign, PamPolicies.RecentAuthentication)
+            .RequireAuthorization(PamPermissions.RolesAssign, PamPolicies.RecentAuthentication, PamPolicies.PermanentAdministrator)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -115,7 +115,7 @@ public static class PrincipalRoleEndpoints
         {
             PrincipalWriteKind.NotFound => StatusCodes.Status404NotFound,
             PrincipalWriteKind.PreconditionFailed => StatusCodes.Status412PreconditionFailed,
-            PrincipalWriteKind.LastAdmin or PrincipalWriteKind.SessionCleanupPending or PrincipalWriteKind.TargetDisabled => StatusCodes.Status409Conflict,
+            PrincipalWriteKind.LastAdmin or PrincipalWriteKind.SessionCleanupPending or PrincipalWriteKind.TargetDisabled or PrincipalWriteKind.BootstrapProtected => StatusCodes.Status409Conflict,
             PrincipalWriteKind.InvalidRequest => StatusCodes.Status400BadRequest,
             _ => StatusCodes.Status403Forbidden
         };
@@ -126,6 +126,7 @@ public static class PrincipalRoleEndpoints
             PrincipalWriteKind.LastAdmin => "last_admin",
             PrincipalWriteKind.SessionCleanupPending => "session_cleanup_pending",
             PrincipalWriteKind.TargetDisabled => "target_disabled",
+            PrincipalWriteKind.BootstrapProtected => "bootstrap_identity_protected",
             _ => null
         };
         return TypedResults.Problem(statusCode: status,

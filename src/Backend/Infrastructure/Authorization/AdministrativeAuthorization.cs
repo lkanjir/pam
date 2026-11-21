@@ -13,8 +13,13 @@ internal static class AdministrativeAuthorization
     public static Task<bool> WouldRemoveLastAdminAsync(PamDbContext database, long targetId, CancellationToken cancellationToken) =>
         database.PamRoleAssignments.AnyAsync(assignment => assignment.PrincipalId == targetId
             && assignment.Principal.IsEnabled && assignment.Role.Code == PamRoleCodes.Admin
+            && !database.PamInstallations.Any(installation => installation.BootstrapPrincipalId == targetId)
             && !database.Principals.Any(principal => principal.Id != targetId && principal.IsEnabled
+                && !database.PamInstallations.Any(installation => installation.BootstrapPrincipalId == principal.Id)
                 && principal.RoleAssignments.Any(role => role.Role.Code == PamRoleCodes.Admin)), cancellationToken);
+
+    public static Task<bool> IsBootstrapPrincipalAsync(PamDbContext database, long principalId, CancellationToken cancellationToken) =>
+        database.PamInstallations.AnyAsync(installation => installation.BootstrapPrincipalId == principalId, cancellationToken);
 
     public static async Task<AdministrativeDecision> CheckAsync(PamDbContext database, TimeProvider clock,
         AdministrativeActor actor, string permission, CancellationToken cancellationToken)
@@ -31,6 +36,12 @@ internal static class AdministrativeAuthorization
         }
 
         var roles = PamPermissionRoles.For(permission);
+        var installation = await database.PamInstallations.Where(value => value.BootstrapPrincipalId == principal.Id)
+            .Select(value => new { value.CompletedAt }).SingleOrDefaultAsync(cancellationToken);
+        if (installation is not null && (installation.CompletedAt is not null || !BootstrapPermissions.Allows(permission)))
+        {
+            return AdministrativeDecision.Forbidden;
+        }
         if (!await database.PamRoleAssignments.AnyAsync(assignment => assignment.PrincipalId == principal.Id
             && roles.Contains(assignment.Role.Code), cancellationToken))
         {

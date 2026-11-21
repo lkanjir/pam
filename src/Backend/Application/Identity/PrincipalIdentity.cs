@@ -1,3 +1,6 @@
 namespace Application.Identity;
 
-public sealed record PrincipalIdentity(long Id, Guid PublicId, string DisplayName, bool IsEnabled, IReadOnlyList<string> Roles);
+public sealed record PrincipalIdentity(long Id, Guid PublicId, string DisplayName, bool IsEnabled, IReadOnlyList<string> Roles)
+{
+    public bool IsBootstrap { get; init; }
+}

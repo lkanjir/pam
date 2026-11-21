@@ -10,6 +10,7 @@ public class PamDbContext : DbContext
     }
 
     public DbSet<Principal> Principals => Set<Principal>();
+    public DbSet<PamInstallation> PamInstallations => Set<PamInstallation>();
     public DbSet<AuthenticationSessionLedger> AuthenticationSessionLedgers => Set<AuthenticationSessionLedger>();
     public DbSet<PamRole> PamRoles => Set<PamRole>();
     public DbSet<PamRoleAssignment> PamRoleAssignments => Set<PamRoleAssignment>();
