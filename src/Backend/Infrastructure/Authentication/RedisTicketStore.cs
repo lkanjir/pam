@@ -45,6 +45,12 @@ public sealed class RedisTicketStore : ISessionTicketStore
         return encoded
         """;
 
+    private const string DiscardLeaseScript = """
+        if redis.call('EXISTS', KEYS[1]) == 1 or redis.call('HEXISTS', KEYS[3], ARGV[1]) == 1 then return 0 end
+        if redis.call('HGET', KEYS[2], ARGV[1]) ~= ARGV[2] then return 0 end
+        return redis.call('HDEL', KEYS[2], ARGV[1])
+        """;
+
     public RedisTicketStore(IConnectionMultiplexer redis, IDataProtectionProvider dataProtectionProvider,
         TimeProvider timeProvider, string? recoveryScope = null)
     {
@@ -257,6 +263,47 @@ public sealed class RedisTicketStore : ISessionTicketStore
         }
 
         return _database.HashDeleteAsync(_pendingEndsKey, sessionIdHash);
+    }
+
+    public async Task<SessionLeasePage> ReadLeasePageAsync(SessionLeasePosition position, int limit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, 1000);
+        ArgumentOutOfRangeException.ThrowIfNegative(position.PageOffset);
+        cancellationToken.ThrowIfCancellationRequested();
+        var entries = _database.HashScanAsync(_leasesKey, pageSize: 128, cursor: position.Cursor, pageOffset: position.PageOffset);
+        await using var enumerator = entries.GetAsyncEnumerator(cancellationToken);
+        var hashes = new List<string>();
+        while (hashes.Count < limit && await enumerator.MoveNextAsync())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string hash = enumerator.Current.Name.ToString();
+            if (!SessionIdentifier.IsValid(hash))
+            {
+                throw new InvalidOperationException("The session lease hash is invalid.");
+            }
+            hashes.Add(hash);
+        }
+        var scan = (IScanningCursor)enumerator;
+        var next = hashes.Count == limit ? new SessionLeasePosition(scan.Cursor, scan.PageOffset + 1) : new();
+        return new(hashes, next);
+    }
+
+    public async Task<bool> DiscardExpiredLeaseAsync(string sessionIdHash, SessionObservation expected)
+    {
+        if (!SessionIdentifier.IsValid(sessionIdHash))
+        {
+            throw new ArgumentException("A valid session hash is required.", nameof(sessionIdHash));
+        }
+        if (expected.HasTicket || expected.PendingEnd is not null || expected.LeaseVersion is null
+            || expected.LeaseExpiresAt is not { } expiry || expiry > _timeProvider.GetUtcNow())
+        {
+            return false;
+        }
+        var result = await _database.ScriptEvaluateAsync(DiscardLeaseScript,
+            [KeyPrefix + sessionIdHash, _leasesKey, _pendingEndsKey], [sessionIdHash, expected.LeaseVersion]);
+        return (int)result == 1;
     }
 
     private static PendingSessionEnd ReadEnd(string? json, string hash)

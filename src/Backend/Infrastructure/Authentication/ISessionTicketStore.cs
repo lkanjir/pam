@@ -20,4 +20,8 @@ public interface ISessionTicketStore
     Task<PendingSessionEnd?> EndAsync(PendingSessionEnd completion, SessionObservation? expected = null);
     Task<IReadOnlyList<PendingSessionEnd>> ReadPendingEndsAsync(int limit, CancellationToken cancellationToken = default);
     Task AcknowledgeEndAsync(string sessionIdHash);
+    Task<SessionLeasePage> ReadLeasePageAsync(SessionLeasePosition position, int limit, CancellationToken cancellationToken = default);
+    // Caller holds the DB publication guard and has established there is no ledger.
+    // Deletes only the observed expired lease, never a ticket or pending end intent.
+    Task<bool> DiscardExpiredLeaseAsync(string sessionIdHash, SessionObservation expected);
 }

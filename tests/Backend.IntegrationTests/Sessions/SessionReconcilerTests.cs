@@ -263,7 +263,8 @@ public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixtur
         // Assert
         Assert.Equal(position.ThroughId, next.ThroughId);
         Assert.True(next.AfterId > position.AfterId);
-        Assert.Equal(new SessionReconciliationPosition(), wrapped);
+        Assert.Equal(0, wrapped.AfterId);
+        Assert.Equal(0, wrapped.ThroughId);
         await test.AssertEndAsync(lost, "session_lost", test.Clock.Now);
         Assert.Equal(4, await test.Database.Context.AuthenticationSessionLedgers.CountAsync(s => s.EndedAt == null));
     }
@@ -296,6 +297,8 @@ public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixtur
         var tickets = A.Fake<ISessionTicketStore>();
         A.CallTo(() => tickets.ReadPendingEndsAsync(A<int>._, A<CancellationToken>._))
             .Returns(Array.Empty<PendingSessionEnd>());
+        A.CallTo(() => tickets.ReadLeasePageAsync(A<SessionLeasePosition>._, A<int>._, A<CancellationToken>._))
+            .Returns(new SessionLeasePage(Array.Empty<string>(), new()));
         A.CallTo(() => tickets.ObserveAsync(A<string>._))
             .ThrowsAsync(new StackExchange.Redis.RedisConnectionException(StackExchange.Redis.ConnectionFailureType.UnableToConnect, StackExchange.Redis.CommandFlags.None, "offline"));
         var reconciler = new SessionReconciler(test.Database.Context, tickets,

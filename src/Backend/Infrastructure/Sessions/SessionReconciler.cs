@@ -30,6 +30,25 @@ public sealed class SessionReconciler(
         {
             await TryCompleteAsync(completion, cancellationToken);
         }
+        var leases = await tickets.ReadLeasePageAsync(position.Leases, limit, cancellationToken);
+        foreach (string hash in leases.SessionIdHashes)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var observed = await tickets.ObserveAsync(hash);
+            if (observed.HasTicket || observed.PendingEnd is not null
+                || observed.LeaseExpiresAt is not { } expiry || expiry > timeProvider.GetUtcNow())
+            {
+                continue;
+            }
+            await using var publication = await database.Database.BeginTransactionAsync(cancellationToken);
+            await SessionPublicationGuard.LockAsync(database, hash, cancellationToken);
+            if (!await database.AuthenticationSessionLedgers.AnyAsync(value => value.SessionIdHash == hash, cancellationToken))
+            {
+                await tickets.DiscardExpiredLeaseAsync(hash, observed);
+            }
+            await publication.CommitAsync(cancellationToken);
+        }
+        var nextPosition = position with { Leases = leases.Next };
 
         long ceiling = position.ThroughId;
         if (ceiling == 0)
@@ -40,7 +59,7 @@ public sealed class SessionReconciler(
 
         if (ceiling == 0)
         {
-            return new();
+            return nextPosition with { AfterId = 0, ThroughId = 0 };
         }
 
         var sessions = await (from item in database.AuthenticationSessionLedgers
@@ -97,7 +116,7 @@ public sealed class SessionReconciler(
         }
 
         long lastId = sessions.Count == 0 ? ceiling : sessions[^1].Id;
-        return lastId >= ceiling ? new() : new(lastId, ceiling);
+        return nextPosition with { AfterId = lastId >= ceiling ? 0 : lastId, ThroughId = lastId >= ceiling ? 0 : ceiling };
     }
 
     private async Task TryCompleteAsync(PendingSessionEnd completion, CancellationToken cancellationToken)
