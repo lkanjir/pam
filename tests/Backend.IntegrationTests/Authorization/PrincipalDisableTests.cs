@@ -9,12 +9,14 @@ using Application.Sessions;
 using Backend.IntegrationTests.Fixtures;
 using Backend.IntegrationTests.Resources;
 using Backend.IntegrationTests.Sessions;
+using Infrastructure.Authentication;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Entities;
 using Infrastructure.Principals;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 using static Backend.IntegrationTests.AccessRequests.AccessRequestTestData;
 
 namespace Backend.IntegrationTests.Authorization;
@@ -314,7 +316,9 @@ public sealed class PrincipalDisableTests(PostgresFixture postgres, RedisFixture
             snapshot = snapshot with { PublicId = Guid.NewGuid() };
         }
         var actor = new AdministrativeActor(snapshot, fault == "freshness" ? test.Clock.Now.AddMinutes(-11) : test.Clock.Now);
-        var service = new PrincipalAdministrationService(test.Database.Context, test.Clock);
+        await using var services = test.CreateScope();
+        var service = new PrincipalAdministrationService(test.Database.Context, test.Clock,
+            services.ServiceProvider.GetRequiredService<ISessionTicketStore>());
         var request = fault == "reason" ? new ChangePrincipalStatusRequest { Reason = string.Empty } : Reason();
 
         // Act
@@ -341,8 +345,10 @@ public sealed class PrincipalDisableTests(PostgresFixture postgres, RedisFixture
         var attempt = new AdministrationAttempt();
         await using var winnerContext = Context(test, saveGate);
         await using var loserContext = Context(test, attempt);
-        var firstService = new PrincipalAdministrationService(winnerContext, test.Clock);
-        var secondService = new PrincipalAdministrationService(loserContext, test.Clock);
+        await using var services = test.CreateScope();
+        var tickets = services.ServiceProvider.GetRequiredService<ISessionTicketStore>();
+        var firstService = new PrincipalAdministrationService(winnerContext, test.Clock, tickets);
+        var secondService = new PrincipalAdministrationService(loserContext, test.Clock, tickets);
 
         // Act
         var firstWrite = firstService.DisableAsync(loser.PublicId, Reason(), new AdministrativeActor(Snapshot(winner), test.Clock.Now),

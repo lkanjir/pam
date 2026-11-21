@@ -9,6 +9,7 @@ using Infrastructure.Persistence.Entities;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
 
 namespace Backend.IntegrationTests.Resources;
@@ -39,6 +40,7 @@ internal sealed class ResourceTestContext : IAsyncDisposable
     public long ActorId { get; }
     public ManagedResource Resource { get; }
     public HttpClient Client { get; }
+    public AsyncServiceScope CreateScope() => _application.Services.CreateAsyncScope();
     public string ResourceUrl => $"/api/resources/{Resource.PublicId}";
 
     public static async Task<ResourceTestContext> CreateAsync(

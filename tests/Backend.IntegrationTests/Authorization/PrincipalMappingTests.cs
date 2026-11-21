@@ -6,8 +6,10 @@ using Application.Principals;
 using Application.Sessions;
 using Backend.IntegrationTests.Fixtures;
 using Backend.IntegrationTests.Resources;
+using Infrastructure.Authentication;
 using Infrastructure.Principals;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Backend.IntegrationTests.Authorization;
 
@@ -281,7 +283,9 @@ public sealed class PrincipalMappingTests(PostgresFixture postgres, RedisFixture
             snapshot = snapshot with { Id = long.MaxValue };
         }
         var actor = new AdministrativeActor(snapshot, fault == "freshness" ? test.Clock.Now.AddMinutes(-11) : test.Clock.Now);
-        var service = new PrincipalAdministrationService(test.Database.Context, test.Clock);
+        await using var services = test.CreateScope();
+        var service = new PrincipalAdministrationService(test.Database.Context, test.Clock,
+            services.ServiceProvider.GetRequiredService<ISessionTicketStore>());
 
         // Act
         var request = fault == "invalid-request" ? Payload() with { Reason = string.Empty } : Payload();

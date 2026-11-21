@@ -65,6 +65,22 @@ public static class PrincipalEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
+        endpoints.MapPost("/principals/{id:guid}/enable", Enable).WithResourceVersion()
+            .WithTags("Principals")
+            .WithName("Principal.Enable")
+            .WithSummary("Enable another PAM account after revoking its previous sessions")
+            .WithDescription("Requires principals.manage, recent-auth, a reason and the target principal's current strong ETag in If-Match. "
+                + "Self changes are forbidden. Retained role/resource/eligibility assignments are not changed; review them before enabling. "
+                + "Previous published sessions are revoked in bounded batches before restoring access; unfinished cleanup returns 409 with "
+                + "session_cleanup_pending and leaves the account disabled. Retry after reconciliation. A current-version enabled-state retry is a no-op.")
+            .RequireAuthorization(PamPermissions.PrincipalsManage, PamPolicies.RecentAuthentication)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status412PreconditionFailed)
+            .ProducesProblem(StatusCodes.Status428PreconditionRequired);
         return endpoints;
     }
 
@@ -133,13 +149,37 @@ public static class PrincipalEndpoints
         return TypedResults.Ok(principal);
     }
 
+    private static async Task<Results<Ok<PrincipalResponse>, UnauthorizedHttpResult, ProblemHttpResult>> Enable(Guid id,
+        ChangePrincipalStatusRequest request, [FromHeader(Name = "If-Match")] string? ifMatch, HttpContext context,
+        IPrincipalAdministrationService service, CancellationToken cancellationToken)
+    {
+        if (!PamClaims.TryRead(context.User, out var identity))
+        {
+            return TypedResults.Unauthorized();
+        }
+        if (ResourceEtags.RequireVersion(context.Request, ifMatch, out uint version) is { } precondition)
+        {
+            return precondition;
+        }
+        var snapshot = new PrincipalSnapshot(identity.Id, identity.PublicId, identity.DisplayName, identity.Issuer, identity.Subject);
+        var result = await service.EnableAsync(id, request, new AdministrativeActor(snapshot, PamAuthenticationTime.Read(context.User)),
+            version, context.TraceIdentifier, cancellationToken);
+        if (result.Kind != PrincipalWriteKind.Succeeded)
+        {
+            return StatusProblem(result.Kind);
+        }
+        var principal = result.Principal ?? throw new InvalidOperationException("Enable returned no principal.");
+        context.Response.Headers.ETag = ResourceEtags.Format(principal.Version);
+        return TypedResults.Ok(principal);
+    }
+
     private static ProblemHttpResult StatusProblem(PrincipalWriteKind kind)
     {
         int status = kind switch
         {
             PrincipalWriteKind.NotFound => StatusCodes.Status404NotFound,
             PrincipalWriteKind.PreconditionFailed => StatusCodes.Status412PreconditionFailed,
-            PrincipalWriteKind.LastAdmin => StatusCodes.Status409Conflict,
+            PrincipalWriteKind.LastAdmin or PrincipalWriteKind.SessionCleanupPending => StatusCodes.Status409Conflict,
             PrincipalWriteKind.InvalidRequest => StatusCodes.Status400BadRequest,
             _ => StatusCodes.Status403Forbidden
         };
@@ -148,6 +188,7 @@ public static class PrincipalEndpoints
             PrincipalWriteKind.RecentAuthenticationRequired => "recent_auth_required",
             PrincipalWriteKind.SelfChangeForbidden => "self_change_forbidden",
             PrincipalWriteKind.LastAdmin => "last_admin",
+            PrincipalWriteKind.SessionCleanupPending => "session_cleanup_pending",
             _ => null
         };
         return TypedResults.Problem(statusCode: status,

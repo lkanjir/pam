@@ -303,9 +303,6 @@ namespace Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_authentication_session_ledger_open_id")
                         .HasFilter("ended_at IS NULL");
 
-                    b.HasIndex("PrincipalId")
-                        .HasDatabaseName("ix_authentication_session_ledger_principal_id");
-
                     b.HasIndex("PublicId")
                         .IsUnique()
                         .HasDatabaseName("ix_authentication_session_ledger_public_id");
@@ -313,6 +310,10 @@ namespace Infrastructure.Persistence.Migrations
                     b.HasIndex("SessionIdHash")
                         .IsUnique()
                         .HasDatabaseName("ix_authentication_session_ledger_session_id_hash");
+
+                    b.HasIndex("PrincipalId", "Id")
+                        .HasDatabaseName("ix_authentication_session_ledger_open_principal_id")
+                        .HasFilter("ended_at IS NULL");
 
                     b.ToTable("authentication_session_ledger", (string)null);
                 });
