@@ -413,6 +413,13 @@ an existing assignment with the current version preserves sessions and creates
 no duplicate audit. A missing fixed bundle descriptor is created on its first
 explicit assignment; arbitrary bundle codes are rejected.
 
+Delivered role removal: `DELETE /api/principals/{id}/roles/{roleCode}` accepts a
+JSON reason and the same authorization/version requirements. Removal immediately
+changes current DB authorization. It atomically deactivates eligibility losing its
+last requester capability, recording one `eligibility.deactivated` audit per exact
+relationship in SQL, and `role.removed` for the bundle. It does not wait on Redis.
+An absent-role retry is a no-op; granting User later leaves eligibility disabled.
+
 ### Endpoint and operation matrix
 
 These are target contracts; new route names are proposed until their slice is

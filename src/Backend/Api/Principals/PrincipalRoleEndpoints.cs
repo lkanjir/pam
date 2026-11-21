@@ -41,6 +41,23 @@ public static class PrincipalRoleEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
+        endpoints.MapDelete("/principals/{id:guid}/roles/{roleCode}", Remove).WithResourceVersion()
+            .WithTags("Principal roles")
+            .WithName("Principal.Roles.Remove")
+            .WithSummary("Remove one explicit PAM bundle from another account")
+            .WithDescription("Requires roles.assign, recent-auth, a JSON reason and the target principal aggregate's current ETag in If-Match. "
+                + "roleCode must be exactly admin, approver or user. Self changes and removing the last enabled Admin are forbidden. "
+                + "Removal applies immediately in the DB, including disabled accounts, without waiting for Redis cleanup. "
+                + "Eligibility that loses its supporting requester capability is deactivated with per-relationship audit in the same transaction. "
+                + "An absent role with a current version is a no-op. A later grant does not reactivate dependent assignments.")
+            .RequireAuthorization(PamPermissions.RolesAssign, PamPolicies.RecentAuthentication)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status412PreconditionFailed)
+            .ProducesProblem(StatusCodes.Status428PreconditionRequired);
         return endpoints;
     }
 
@@ -56,9 +73,19 @@ public static class PrincipalRoleEndpoints
         return TypedResults.Ok(roles);
     }
 
-    private static async Task<Results<Ok<PrincipalRolesResponse>, UnauthorizedHttpResult, ProblemHttpResult>> Assign(Guid id,
+    private static Task<Results<Ok<PrincipalRolesResponse>, UnauthorizedHttpResult, ProblemHttpResult>> Assign(Guid id,
         string roleCode, ChangePrincipalRoleRequest request, [FromHeader(Name = "If-Match")] string? ifMatch,
-        HttpContext context, IPrincipalRoleService service, CancellationToken cancellationToken)
+        HttpContext context, IPrincipalRoleService service, CancellationToken cancellationToken) =>
+        WriteAsync(id, roleCode, request, ifMatch, context, service, true, cancellationToken);
+
+    private static Task<Results<Ok<PrincipalRolesResponse>, UnauthorizedHttpResult, ProblemHttpResult>> Remove(Guid id,
+        string roleCode, [FromBody] ChangePrincipalRoleRequest request, [FromHeader(Name = "If-Match")] string? ifMatch,
+        HttpContext context, IPrincipalRoleService service, CancellationToken cancellationToken) =>
+        WriteAsync(id, roleCode, request, ifMatch, context, service, false, cancellationToken);
+
+    private static async Task<Results<Ok<PrincipalRolesResponse>, UnauthorizedHttpResult, ProblemHttpResult>> WriteAsync(Guid id,
+        string roleCode, ChangePrincipalRoleRequest request, string? ifMatch, HttpContext context,
+        IPrincipalRoleService service, bool assigned, CancellationToken cancellationToken)
     {
         if (!PamClaims.TryRead(context.User, out var identity))
         {
@@ -69,8 +96,10 @@ public static class PrincipalRoleEndpoints
             return precondition;
         }
         var snapshot = new PrincipalSnapshot(identity.Id, identity.PublicId, identity.DisplayName, identity.Issuer, identity.Subject);
-        var result = await service.AssignAsync(id, roleCode, request,
-            new AdministrativeActor(snapshot, PamAuthenticationTime.Read(context.User)), version, context.TraceIdentifier, cancellationToken);
+        var actor = new AdministrativeActor(snapshot, PamAuthenticationTime.Read(context.User));
+        var result = assigned
+            ? await service.AssignAsync(id, roleCode, request, actor, version, context.TraceIdentifier, cancellationToken)
+            : await service.RemoveAsync(id, roleCode, request, actor, version, context.TraceIdentifier, cancellationToken);
         if (result.Kind != PrincipalWriteKind.Succeeded)
         {
             return WriteProblem(result.Kind);
