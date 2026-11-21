@@ -40,6 +40,7 @@ internal sealed class ResourceTestContext : IAsyncDisposable
     public long ActorId { get; }
     public ManagedResource Resource { get; }
     public HttpClient Client { get; }
+    public HttpClient CreateClient() => _application.GetTestClient();
     public AsyncServiceScope CreateScope() => _application.Services.CreateAsyncScope();
     public string ResourceUrl => $"/api/resources/{Resource.PublicId}";
 

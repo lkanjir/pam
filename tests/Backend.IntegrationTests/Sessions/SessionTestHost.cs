@@ -38,7 +38,8 @@ internal static class SessionTestHost
         // Replace only the external identity provider's sign-in entry point.
         app.MapGet("/login", async (HttpContext context) =>
         {
-            long id = long.Parse(principalId, System.Globalization.CultureInfo.InvariantCulture);
+            string selectedId = context.Request.Query["principal-id"].FirstOrDefault() ?? principalId;
+            long id = long.Parse(selectedId, System.Globalization.CultureInfo.InvariantCulture);
             var principal = await context.RequestServices.GetRequiredService<PamDbContext>().Principals
                 .AsNoTracking().SingleAsync(principal => principal.Id == id, context.RequestAborted);
             var current = await context.RequestServices.GetRequiredService<IPrincipalIdentityReader>()
