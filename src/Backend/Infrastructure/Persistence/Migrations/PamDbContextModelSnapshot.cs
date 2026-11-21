@@ -94,6 +94,9 @@ namespace Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_access_requests_requester_principal_id_idempotency_key");
 
+                    b.HasIndex("RequesterPrincipalId", "PublicId")
+                        .HasDatabaseName("ix_access_requests_requester_principal_id_public_id");
+
                     b.ToTable("access_requests", null, t =>
                         {
                             t.HasCheckConstraint("ck_access_requests_requested_duration_minutes", "requested_duration_minutes > 0");
