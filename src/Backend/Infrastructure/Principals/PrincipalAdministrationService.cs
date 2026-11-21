@@ -17,8 +17,16 @@ public sealed class PrincipalAdministrationService(PamDbContext database, TimePr
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public async Task<PrincipalWriteResult> DisableAsync(Guid id, ChangePrincipalStatusRequest request, AdministrativeActor actor,
-        uint expectedVersion, string correlationId, CancellationToken cancellationToken = default)
+    public Task<PrincipalWriteResult> DisableAsync(Guid id, ChangePrincipalStatusRequest request, AdministrativeActor actor,
+        uint expectedVersion, string correlationId, CancellationToken cancellationToken = default) =>
+        SetEnabledAsync(id, request, actor, expectedVersion, correlationId, false, cancellationToken);
+
+    public Task<PrincipalWriteResult> EnableAsync(Guid id, ChangePrincipalStatusRequest request, AdministrativeActor actor,
+        uint expectedVersion, string correlationId, CancellationToken cancellationToken = default) =>
+        SetEnabledAsync(id, request, actor, expectedVersion, correlationId, true, cancellationToken);
+
+    private async Task<PrincipalWriteResult> SetEnabledAsync(Guid id, ChangePrincipalStatusRequest request, AdministrativeActor actor,
+        uint expectedVersion, string correlationId, bool enabled, CancellationToken cancellationToken)
     {
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         if (!await AdministrativeAuthorization.LockAdministrationGuardAsync(database, cancellationToken))
@@ -55,18 +63,30 @@ public sealed class PrincipalAdministrationService(PamDbContext database, TimePr
         var before = new PrincipalResponse(target.PublicId, target.Issuer, target.Subject, target.DisplayName, target.IsEnabled,
             new DateTimeOffset(target.CreatedAt, TimeSpan.Zero), new DateTimeOffset(target.ModifiedAt, TimeSpan.Zero))
         { Version = target.Version };
-        if (!target.IsEnabled)
+        if (target.IsEnabled == enabled)
         {
             return new(PrincipalWriteKind.Succeeded, before);
         }
-        if (await AdministrativeAuthorization.WouldRemoveLastAdminAsync(database, target.Id, cancellationToken))
+        if (!enabled && await AdministrativeAuthorization.WouldRemoveLastAdminAsync(database, target.Id, cancellationToken))
         {
             return new(PrincipalWriteKind.LastAdmin);
         }
+        if (enabled)
+        {
+            var recordedDisable = await database.AuditEvents
+                .Where(audit => audit.SubjectPrincipalId == target.Id && audit.EventType == "principal.disabled")
+                .OrderByDescending(audit => audit.Id).Select(audit => (DateTime?)audit.OccurredAt).FirstOrDefaultAsync(cancellationToken);
+            var revokedAt = recordedDisable is { } recorded ? new DateTimeOffset(recorded, TimeSpan.Zero) : clock.GetUtcNow();
+            if (!await PrincipalSessionRevocation.RevokeBeforeRestorationAsync(database, tickets, clock,
+                target.Id, revokedAt, correlationId, cancellationToken))
+            {
+                return new(PrincipalWriteKind.SessionCleanupPending);
+            }
+        }
 
         var now = clock.GetUtcNow();
         int changed = await database.Principals.Where(principal => principal.Id == target.Id && principal.Version == expectedVersion)
-            .ExecuteUpdateAsync(update => update.SetProperty(principal => principal.IsEnabled, false)
+            .ExecuteUpdateAsync(update => update.SetProperty(principal => principal.IsEnabled, enabled)
                 .SetProperty(principal => principal.ModifiedAt, now.UtcDateTime), cancellationToken);
         if (changed != 1)
         {
@@ -75,7 +95,7 @@ public sealed class PrincipalAdministrationService(PamDbContext database, TimePr
         var after = await GetByIdAsync(id, cancellationToken) ?? throw new InvalidOperationException("Locked principal was not found.");
         database.AuditEvents.Add(new AuditEvent
         {
-            EventType = "principal.disabled",
+            EventType = enabled ? "principal.enabled" : "principal.disabled",
             SchemaVersion = 1,
             OccurredAt = now.UtcDateTime,
             ActorKind = "principal",
@@ -87,89 +107,7 @@ public sealed class PrincipalAdministrationService(PamDbContext database, TimePr
             CorrelationId = correlationId,
             Source = "pam.api",
             Outcome = "success",
-            ReasonCode = "account_disabled"
-        });
-        await database.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return new(PrincipalWriteKind.Succeeded, after);
-    }
-
-    public async Task<PrincipalWriteResult> EnableAsync(Guid id, ChangePrincipalStatusRequest request, AdministrativeActor actor,
-        uint expectedVersion, string correlationId, CancellationToken cancellationToken = default)
-    {
-        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
-        if (!await AdministrativeAuthorization.LockAdministrationGuardAsync(database, cancellationToken))
-        {
-            return new(PrincipalWriteKind.Forbidden);
-        }
-        var principals = await database.Principals.FromSql(
-            $"SELECT *, xmin FROM principals WHERE id = {actor.Principal.Id} OR public_id = {id} ORDER BY id FOR UPDATE")
-            .AsNoTracking().ToListAsync(cancellationToken);
-        var decision = await AdministrativeAuthorization.CheckAsync(database, clock, actor,
-            PamPermissions.PrincipalsManage, cancellationToken);
-        if (decision != AdministrativeDecision.Allowed)
-        {
-            return new(decision == AdministrativeDecision.Forbidden
-                ? PrincipalWriteKind.Forbidden : PrincipalWriteKind.RecentAuthenticationRequired);
-        }
-        var target = principals.SingleOrDefault(principal => principal.PublicId == id);
-        if (target is null)
-        {
-            return new(PrincipalWriteKind.NotFound);
-        }
-        if (target.Id == actor.Principal.Id)
-        {
-            return new(PrincipalWriteKind.SelfChangeForbidden);
-        }
-        if (!Validator.TryValidateObject(request, new ValidationContext(request), null, validateAllProperties: true))
-        {
-            return new(PrincipalWriteKind.InvalidRequest);
-        }
-        if (target.Version != expectedVersion)
-        {
-            return new(PrincipalWriteKind.PreconditionFailed);
-        }
-        var before = new PrincipalResponse(target.PublicId, target.Issuer, target.Subject, target.DisplayName, target.IsEnabled,
-            new DateTimeOffset(target.CreatedAt, TimeSpan.Zero), new DateTimeOffset(target.ModifiedAt, TimeSpan.Zero))
-        { Version = target.Version };
-        if (target.IsEnabled)
-        {
-            return new(PrincipalWriteKind.Succeeded, before);
-        }
-        var recordedDisable = await database.AuditEvents
-            .Where(audit => audit.SubjectPrincipalId == target.Id && audit.EventType == "principal.disabled")
-            .OrderByDescending(audit => audit.Id).Select(audit => (DateTime?)audit.OccurredAt).FirstOrDefaultAsync(cancellationToken);
-        var revokedAt = recordedDisable is { } recorded ? new DateTimeOffset(recorded, TimeSpan.Zero) : clock.GetUtcNow();
-        if (!await PrincipalSessionRevocation.RevokeBeforeRestorationAsync(database, tickets, clock,
-            target.Id, revokedAt, correlationId, cancellationToken))
-        {
-            return new(PrincipalWriteKind.SessionCleanupPending);
-        }
-
-        var now = clock.GetUtcNow();
-        int changed = await database.Principals.Where(principal => principal.Id == target.Id && principal.Version == expectedVersion)
-            .ExecuteUpdateAsync(update => update.SetProperty(principal => principal.IsEnabled, true)
-                .SetProperty(principal => principal.ModifiedAt, now.UtcDateTime), cancellationToken);
-        if (changed != 1)
-        {
-            return new(PrincipalWriteKind.PreconditionFailed);
-        }
-        var after = await GetByIdAsync(id, cancellationToken) ?? throw new InvalidOperationException("Locked principal was not found.");
-        database.AuditEvents.Add(new AuditEvent
-        {
-            EventType = "principal.enabled",
-            SchemaVersion = 1,
-            OccurredAt = now.UtcDateTime,
-            ActorKind = "principal",
-            ActorPrincipalId = actor.Principal.Id,
-            SubjectPrincipalId = target.Id,
-            ActorSnapshot = JsonSerializer.Serialize(actor.Principal, JsonOptions),
-            SubjectSnapshot = JsonSerializer.Serialize(after, JsonOptions),
-            Metadata = JsonSerializer.Serialize(new { before, after, reason = request.Reason.Trim() }, JsonOptions),
-            CorrelationId = correlationId,
-            Source = "pam.api",
-            Outcome = "success",
-            ReasonCode = "account_enabled"
+            ReasonCode = enabled ? "account_enabled" : "account_disabled"
         });
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
