@@ -20,7 +20,9 @@ public static class AuthorizationServiceCollectionExtensions
             .AddPolicy(PamPermissions.ResourcesReadAll, policy =>
                 policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.ResourcesReadAll)))
             .AddPolicy(PamPermissions.ResourcesManage, policy =>
-                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.ResourcesManage)));
+                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.ResourcesManage)))
+            .AddPolicy(PamPermissions.PrincipalsRead, policy =>
+                policy.RequireAuthenticatedUser().RequireRole(PamPermissionRoles.For(PamPermissions.PrincipalsRead)));
         return services;
     }
 }

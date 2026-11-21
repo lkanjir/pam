@@ -3,6 +3,7 @@ using Api.Authentication;
 using Api.Authorization;
 using Api.Errors;
 using Api.Filters;
+using Api.Principals;
 using Api.Resources;
 using Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -55,6 +56,7 @@ public static class PamApplication
         api.MapAuthenticationEndpoints();
         api.MapResourceEndpoints();
         api.MapAccessRequestEndpoints();
+        api.MapPrincipalEndpoints();
 
         if (app.Environment.IsDevelopment())
         {

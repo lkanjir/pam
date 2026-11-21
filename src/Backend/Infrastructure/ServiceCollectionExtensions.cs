@@ -1,11 +1,13 @@
 using Application.AccessRequests;
 using Application.Identity;
+using Application.Principals;
 using Application.Resources;
 using Application.Sessions;
 using Infrastructure.AccessRequests;
 using Infrastructure.Authentication;
 using Infrastructure.Identity;
 using Infrastructure.Persistence;
+using Infrastructure.Principals;
 using Infrastructure.Resources;
 using Infrastructure.Sessions;
 using Microsoft.AspNetCore.DataProtection;
@@ -100,6 +102,7 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<SessionReconciliationWorker>();
 
         services.AddScoped<IResourceService, ResourceService>();
+        services.AddScoped<IPrincipalAdministrationService, PrincipalAdministrationService>();
         services.AddScoped<IAccessRequestService, AccessRequestService>();
 
         return services;

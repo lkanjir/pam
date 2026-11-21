@@ -6,13 +6,14 @@ public static class PamPermissionRoles
     public static bool RequiresRecentAuthentication(string permission) => permission switch
     {
         PamPermissions.ResourcesManage => true,
-        PamPermissions.ResourcesReadAll or PamPermissions.RequestsReadOwn or PamPermissions.RequestsCreate => false,
+        PamPermissions.ResourcesReadAll or PamPermissions.RequestsReadOwn or PamPermissions.RequestsCreate
+            or PamPermissions.PrincipalsRead => false,
         _ => throw new ArgumentException("The permission is not registered.", nameof(permission))
     };
 
     public static string[] For(string permission) => permission switch
     {
-        PamPermissions.ResourcesReadAll or PamPermissions.ResourcesManage => [PamRoleCodes.Admin],
+        PamPermissions.ResourcesReadAll or PamPermissions.ResourcesManage or PamPermissions.PrincipalsRead => [PamRoleCodes.Admin],
         PamPermissions.RequestsReadOwn or PamPermissions.RequestsCreate => [PamRoleCodes.User],
         _ => throw new ArgumentException("The permission is not registered.", nameof(permission))
     };
