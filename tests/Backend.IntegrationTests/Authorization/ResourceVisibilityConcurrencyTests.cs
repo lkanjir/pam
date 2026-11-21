@@ -128,6 +128,59 @@ public sealed class ResourceVisibilityConcurrencyTests(PostgresFixture postgres,
         Assert.False(await test.Database.Context.ManagedResources.AnyAsync(value => value.Id == test.Resource.Id));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Submit_ConcurrentViewRevocation_RespectsPrincipalLockOrder(bool revocationFirst)
+    {
+        // Arrange
+        await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection);
+        var entitlement = await SeedEntitlementAsync(test);
+        var requester = await test.Database.Context.Principals.AsNoTracking().SingleAsync(value => value.Id == test.ActorId);
+        var gate = new AuditGate(revocationFirst ? "resource_access.revoked" : "access_request.created");
+        var attempt = new CommandAttempt("FROM principals", "FOR UPDATE");
+        await using var submissionContext = Context(test, revocationFirst ? attempt : gate);
+        await using var revocationContext = Context(test, revocationFirst ? gate : attempt);
+        var requests = new AccessRequestService(submissionContext, test.Clock);
+        var views = new ResourceAccessService(revocationContext, test.Clock);
+        Task<AccessRequestSubmissionResult> submission;
+        Task<ResourceAccessWriteResult> revocation;
+
+        // Act
+        if (revocationFirst)
+        {
+            revocation = views.RevokeAsync(requester.PublicId, test.Resource.PublicId, new() { Reason = "Revoke own visibility" },
+                new(Snapshot(requester), test.Clock.Now), requester.Version, "view-first");
+            await gate.Ready.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            submission = requests.SubmitAsync(Request(test, entitlement), "pending-request", Snapshot(requester), "submit-second");
+        }
+        else
+        {
+            submission = requests.SubmitAsync(Request(test, entitlement), "pending-request", Snapshot(requester), "submit-first");
+            await gate.Ready.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            revocation = views.RevokeAsync(requester.PublicId, test.Resource.PublicId, new() { Reason = "Revoke own visibility" },
+                new(Snapshot(requester), test.Clock.Now), requester.Version, "view-second");
+        }
+        try
+        {
+            await attempt.Started.Task.WaitAsync(TimeSpan.FromSeconds(20));
+        }
+        finally
+        {
+            gate.Release.TrySetResult();
+        }
+        var submitted = await submission;
+        var revoked = await revocation;
+
+        // Assert
+        Assert.Equal(PrincipalWriteKind.Succeeded, revoked.Kind);
+        Assert.Equal(revocationFirst ? AccessRequestSubmissionKind.NotFound : AccessRequestSubmissionKind.Created, submitted.Kind);
+        Assert.Equal(revocationFirst ? 0 : 1, await test.Database.Context.AccessRequests.CountAsync());
+        Assert.Equal(revocationFirst ? 0 : 1, await test.Database.Context.PolicyEvaluations.CountAsync());
+        Assert.False(await test.Database.Context.ResourcePrincipalBindings.AnyAsync(value => value.PrincipalId == requester.Id && value.IsActive));
+        Assert.True(await test.Database.Context.EligibilityRules.AnyAsync(value => value.PrincipalId == requester.Id && value.IsEnabled));
+    }
+
     private static async Task<Principal> AddAdminAsync(ResourceTestContext test)
     {
         var admin = Principal.CreateMapping("https://identity.example/realms/pam", "second-admin", "Second Admin", test.Clock.Now);
