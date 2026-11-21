@@ -10,4 +10,7 @@ public interface IEligibilityService
     Task<EligibilityWriteResult> AssignAsync(Guid principalId, Guid resourceId, Guid entitlementId,
         ChangeEligibilityRequest request, AdministrativeActor actor, uint expectedVersion, string correlationId,
         CancellationToken cancellationToken = default);
+    Task<EligibilityWriteResult> RevokeAsync(Guid principalId, Guid resourceId, Guid entitlementId,
+        ChangeEligibilityRequest request, AdministrativeActor actor, uint expectedVersion, string correlationId,
+        CancellationToken cancellationToken = default);
 }

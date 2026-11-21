@@ -482,6 +482,13 @@ only with existing User capability. Inactive configuration can be prepared;
 retired/missing/wrong-parent objects return 404. No view, role or target grant is
 created. A current-version enabled-rule retry is a no-op. Success returns 204.
 
+Delivered eligibility revocation: `DELETE /api/principals/{id}/eligibility/{resourceId}/{entitlementId}`
+uses the same sensitive permission, JSON reason and principal ETag. It supports own
+removal, disabled/roleless targets and retired parents, preserving parent integrity.
+It atomically disables the rule with `eligibility.revoked` audit and a new ETag.
+Current-version absent/disabled retries are no-ops. It changes new policy outcomes,
+not view assignments, owner history/replay or previously issued target grants.
+
 ### Endpoint and operation matrix
 
 These are target contracts; new route names are proposed until their slice is

@@ -43,6 +43,21 @@ public static class EligibilityEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
+        endpoints.MapDelete("/principals/{id:guid}/eligibility/{resourceId:guid}/{entitlementId:guid}", Revoke).WithResourceVersion()
+            .WithTags("Eligibility")
+            .WithName("Principal.Eligibility.Revoke")
+            .WithSummary("Revoke one entitlement eligibility rule")
+            .WithDescription("Requires eligibility.assign, recent-auth, a JSON reason and the target principal aggregate's current ETag in If-Match. "
+                + "Own removal is allowed, including roleless/disabled targets and retired resources. The entitlement must match the specified parent. "
+                + "Visibility remains independent; a new visible but ineligible request follows the normal Denied policy. Owner history and identical replays remain stable. "
+                + "Returns 204 and principal ETag; a current-version absent/disabled rule is a no-op. Existing issued target grants are not revoked by this command.")
+            .RequireAuthorization(PamPermissions.EligibilityAssign, PamPolicies.RecentAuthentication)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status412PreconditionFailed)
+            .ProducesProblem(StatusCodes.Status428PreconditionRequired);
         return endpoints;
     }
 
@@ -58,9 +73,19 @@ public static class EligibilityEndpoints
         return TypedResults.Ok(result.Page);
     }
 
-    private static async Task<Results<NoContent, UnauthorizedHttpResult, ProblemHttpResult>> Assign(Guid id, Guid resourceId,
+    private static Task<Results<NoContent, UnauthorizedHttpResult, ProblemHttpResult>> Assign(Guid id, Guid resourceId,
         Guid entitlementId, ChangeEligibilityRequest request, [FromHeader(Name = "If-Match")] string? ifMatch,
-        HttpContext context, IEligibilityService service, CancellationToken cancellationToken)
+        HttpContext context, IEligibilityService service, CancellationToken cancellationToken) =>
+        WriteAsync(id, resourceId, entitlementId, request, ifMatch, context, service, true, cancellationToken);
+
+    private static Task<Results<NoContent, UnauthorizedHttpResult, ProblemHttpResult>> Revoke(Guid id, Guid resourceId,
+        Guid entitlementId, [FromBody] ChangeEligibilityRequest request, [FromHeader(Name = "If-Match")] string? ifMatch,
+        HttpContext context, IEligibilityService service, CancellationToken cancellationToken) =>
+        WriteAsync(id, resourceId, entitlementId, request, ifMatch, context, service, false, cancellationToken);
+
+    private static async Task<Results<NoContent, UnauthorizedHttpResult, ProblemHttpResult>> WriteAsync(Guid id, Guid resourceId,
+        Guid entitlementId, ChangeEligibilityRequest request, string? ifMatch, HttpContext context,
+        IEligibilityService service, bool assigned, CancellationToken cancellationToken)
     {
         if (!PamClaims.TryRead(context.User, out var identity))
         {
@@ -71,8 +96,10 @@ public static class EligibilityEndpoints
             return precondition;
         }
         var snapshot = new PrincipalSnapshot(identity.Id, identity.PublicId, identity.DisplayName, identity.Issuer, identity.Subject);
-        var result = await service.AssignAsync(id, resourceId, entitlementId, request,
-            new(snapshot, PamAuthenticationTime.Read(context.User)), version, context.TraceIdentifier, cancellationToken);
+        var actor = new AdministrativeActor(snapshot, PamAuthenticationTime.Read(context.User));
+        var result = assigned
+            ? await service.AssignAsync(id, resourceId, entitlementId, request, actor, version, context.TraceIdentifier, cancellationToken)
+            : await service.RevokeAsync(id, resourceId, entitlementId, request, actor, version, context.TraceIdentifier, cancellationToken);
         if (result.Kind != PrincipalWriteKind.Succeeded)
         {
             return WriteProblem(result.Kind);

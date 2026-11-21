@@ -15,9 +15,19 @@ public sealed class EligibilityService(PamDbContext database, TimeProvider clock
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public async Task<EligibilityWriteResult> AssignAsync(Guid principalId, Guid resourceId, Guid entitlementId,
+    public Task<EligibilityWriteResult> AssignAsync(Guid principalId, Guid resourceId, Guid entitlementId,
         ChangeEligibilityRequest request, AdministrativeActor actor, uint expectedVersion, string correlationId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        SetAssignedAsync(principalId, resourceId, entitlementId, request, actor, expectedVersion, correlationId, true, cancellationToken);
+
+    public Task<EligibilityWriteResult> RevokeAsync(Guid principalId, Guid resourceId, Guid entitlementId,
+        ChangeEligibilityRequest request, AdministrativeActor actor, uint expectedVersion, string correlationId,
+        CancellationToken cancellationToken = default) =>
+        SetAssignedAsync(principalId, resourceId, entitlementId, request, actor, expectedVersion, correlationId, false, cancellationToken);
+
+    private async Task<EligibilityWriteResult> SetAssignedAsync(Guid principalId, Guid resourceId, Guid entitlementId,
+        ChangeEligibilityRequest request, AdministrativeActor actor, uint expectedVersion, string correlationId,
+        bool assigned, CancellationToken cancellationToken)
     {
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         var principals = await database.Principals.FromSql(
@@ -42,32 +52,35 @@ public sealed class EligibilityService(PamDbContext database, TimeProvider clock
         {
             return new(PrincipalWriteKind.PreconditionFailed);
         }
-        if (!target.IsEnabled)
+        if (assigned && !target.IsEnabled)
         {
             return new(PrincipalWriteKind.TargetDisabled);
         }
-        var requesterRoles = PamPermissionRoles.For(PamPermissions.RequestsCreate);
-        if (!await database.PamRoleAssignments.AnyAsync(assignment => assignment.PrincipalId == target.Id
-            && requesterRoles.Contains(assignment.Role.Code), cancellationToken))
+        if (assigned)
         {
-            return new(PrincipalWriteKind.TargetMissingCapability);
+            var requesterRoles = PamPermissionRoles.For(PamPermissions.RequestsCreate);
+            if (!await database.PamRoleAssignments.AnyAsync(assignment => assignment.PrincipalId == target.Id
+                && requesterRoles.Contains(assignment.Role.Code), cancellationToken))
+            {
+                return new(PrincipalWriteKind.TargetMissingCapability);
+            }
         }
         var resource = await database.ManagedResources.FromSql(
             $"SELECT *, xmin FROM managed_resources WHERE public_id = {resourceId} FOR UPDATE")
-            .AsNoTracking().SingleOrDefaultAsync(cancellationToken);
-        if (resource is null)
+            .IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(cancellationToken);
+        if (resource is null || (assigned && resource.DeletedAt != null))
         {
             return new(PrincipalWriteKind.NotFound);
         }
-        var entitlement = await database.Entitlements.AsNoTracking()
+        var entitlement = await database.Entitlements.IgnoreQueryFilters().AsNoTracking()
             .SingleOrDefaultAsync(value => value.PublicId == entitlementId && value.ResourceId == resource.Id, cancellationToken);
         if (entitlement is null)
         {
             return new(PrincipalWriteKind.NotFound);
         }
-        var rule = await database.EligibilityRules.AsNoTracking()
+        var rule = await database.EligibilityRules.IgnoreQueryFilters().AsNoTracking()
             .SingleOrDefaultAsync(value => value.PrincipalId == target.Id && value.EntitlementId == entitlement.Id, cancellationToken);
-        if (rule is { IsEnabled: true })
+        if ((rule is { IsEnabled: true }) == assigned)
         {
             return new(PrincipalWriteKind.Succeeded, target.Version);
         }
@@ -86,8 +99,8 @@ public sealed class EligibilityService(PamDbContext database, TimeProvider clock
         }
         else
         {
-            int ruleChanged = await database.EligibilityRules.Where(value => value.Id == rule.Id)
-                .ExecuteUpdateAsync(update => update.SetProperty(value => value.IsEnabled, true), cancellationToken);
+            int ruleChanged = await database.EligibilityRules.IgnoreQueryFilters().Where(value => value.Id == rule.Id)
+                .ExecuteUpdateAsync(update => update.SetProperty(value => value.IsEnabled, assigned), cancellationToken);
             if (ruleChanged != 1)
             {
                 return new(PrincipalWriteKind.PreconditionFailed);
@@ -101,7 +114,7 @@ public sealed class EligibilityService(PamDbContext database, TimeProvider clock
         }
         database.AuditEvents.Add(new AuditEvent
         {
-            EventType = "eligibility.granted",
+            EventType = assigned ? "eligibility.granted" : "eligibility.revoked",
             SchemaVersion = 1,
             OccurredAt = now.UtcDateTime,
             ActorKind = "principal",
@@ -113,11 +126,11 @@ public sealed class EligibilityService(PamDbContext database, TimeProvider clock
             SubjectSnapshot = JsonSerializer.Serialize(new { target.PublicId, target.Issuer, target.Subject, target.DisplayName }, JsonOptions),
             ResourceSnapshot = JsonSerializer.Serialize(new { resource.PublicId, resource.Name, resource.IsActive }, JsonOptions),
             EntitlementSnapshot = JsonSerializer.Serialize(new { entitlement.PublicId, entitlement.Code, entitlement.Name, entitlement.IsActive }, JsonOptions),
-            Metadata = JsonSerializer.Serialize(new { eligibilityId, before = false, after = true, reason = request.Reason.Trim() }, JsonOptions),
+            Metadata = JsonSerializer.Serialize(new { eligibilityId, before = !assigned, after = assigned, reason = request.Reason.Trim() }, JsonOptions),
             CorrelationId = correlationId,
             Source = "pam.api",
             Outcome = "success",
-            ReasonCode = "eligibility_granted"
+            ReasonCode = assigned ? "eligibility_granted" : "eligibility_revoked"
         });
         await database.SaveChangesAsync(cancellationToken);
         uint version = await database.Principals.Where(value => value.Id == target.Id).Select(value => value.Version).SingleAsync(cancellationToken);
