@@ -14,6 +14,7 @@ public sealed class PermissionPolicyTests
     [InlineData(PamPermissions.PrincipalsManage, true)]
     [InlineData(PamPermissions.RolesAssign, true)]
     [InlineData(PamPermissions.ResourcesReadAll, false)]
+    [InlineData(PamPermissions.ResourcesReadScoped, false)]
     [InlineData(PamPermissions.PrincipalsRead, false)]
     [InlineData(PamPermissions.RolesRead, false)]
     [InlineData(PamPermissions.RequestsCreate, false)]
@@ -97,6 +98,29 @@ public sealed class PermissionPolicyTests
 
         // Act
         var result = await authorization.AuthorizeAsync(new ClaimsPrincipal(identity), PamPermissions.RequestsCreate);
+
+        // Assert
+        Assert.Equal(allowed, result.Succeeded);
+    }
+
+    [Theory]
+    [InlineData("user", true)]
+    [InlineData("approver", true)]
+    [InlineData("user,approver", true)]
+    [InlineData("admin", false)]
+    [InlineData("superadmin", false)]
+    [InlineData("User", false)]
+    [InlineData("", false)]
+    public async Task Authorize_ScopedRead_UsesExplicitOverlappingBundles(string roles, bool allowed)
+    {
+        // Arrange
+        using var services = new ServiceCollection().AddLogging().AddSingleton(TimeProvider.System).AddPamAuthorization().BuildServiceProvider();
+        var authorization = services.GetRequiredService<IAuthorizationService>();
+        var identity = new ClaimsIdentity(roles.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(role => new Claim(PamClaimTypes.Role, role)), "test", "name", PamClaimTypes.Role);
+
+        // Act
+        var result = await authorization.AuthorizeAsync(new ClaimsPrincipal(identity), PamPermissions.ResourcesReadScoped);
 
         // Assert
         Assert.Equal(allowed, result.Succeeded);
