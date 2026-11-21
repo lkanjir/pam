@@ -467,6 +467,12 @@ entitlements, without filtering by caller eligibility. Inactive resources remain
 inspectable; missing/retired parents return 404. This read creates no assignments
 and does not introduce entitlement-management writes.
 
+Delivered eligibility inspection: `GET /api/principals/{id}/eligibility` requires
+`eligibility.read`, returning a bounded entitlement-ID page and principal ETag from
+one SQL snapshot. Disabled principals/rules and inactive or retired parents remain
+inspectable. Configured eligibility, parent availability and resource visibility
+remain separate facts; this read creates no access.
+
 ### Endpoint and operation matrix
 
 These are target contracts; new route names are proposed until their slice is
