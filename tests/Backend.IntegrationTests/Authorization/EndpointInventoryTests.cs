@@ -2,15 +2,32 @@ using System.Net;
 using Api.Authorization;
 using Application.Authorization;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Backend.IntegrationTests.Authorization;
 
 public sealed class EndpointInventoryTests
 {
+    [Fact]
+    public async Task Start_BusinessPolicyWithoutBootstrapBoundary_RejectsBeforeServing()
+    {
+        // Arrange
+        await using var app = Create();
+        app.Services.GetRequiredService<IOptions<AuthorizationOptions>>().Value.AddPolicy(PamPermissions.ResourcesReadAll,
+            new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireRole("admin").Build());
+        app.MapGet("/api/unsafe", () => TypedResults.Ok()).RequireAuthorization(PamPermissions.ResourcesReadAll);
+
+        // Act / Assert
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => app.StartAsync());
+        Assert.Contains("bootstrap boundary", error.Message, StringComparison.Ordinal);
+        Assert.Contains("/api/unsafe", error.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("unclassified")]
     [InlineData("authenticated-only")]
