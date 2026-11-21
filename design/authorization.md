@@ -430,7 +430,7 @@ New submissions hold requester/resource locks through policy persistence; replay
 and owner history do not depend on current visibility. Losing the last supporting
 scoped-read bundle atomically deactivates view bindings with exact per-row audit.
 This schema migration grants no existing account visibility automatically. The
-view-assignment revocation and scoped catalog are subsequent slices.
+scoped catalog is a subsequent slice.
 
 Delivered visibility administration read: `GET /api/principals/{id}/resource-access`
 requires `resource_access.read` and returns a bounded ascending resource-ID page,
@@ -446,6 +446,13 @@ capabilities and target state, and atomically grants/reactivates visibility with
 enabled User or Approver. An Admin with that existing capability may assign their
 own view; no role, eligibility or approval authority is created. An active-state
 retry with the current version is a no-op. Successful writes return 204 and ETag.
+
+Delivered view revocation: `DELETE /api/principals/{id}/resource-access/{resourceId}`
+uses the same sensitive permission, JSON reason and principal If-Match. It supports
+own removal, disabled/roleless targets and retired resources, deactivating the
+relationship with `resource_access.revoked` audit and a new principal ETag. A
+current-version absent/inactive retry is a no-op. It changes scoped checks, not
+owner history/replay or an already-issued target grant.
 
 ### Endpoint and operation matrix
 

@@ -42,6 +42,21 @@ public static class ResourceAccessEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
+        endpoints.MapDelete("/principals/{id:guid}/resource-access/{resourceId:guid}", Revoke).WithResourceVersion()
+            .WithTags("Resource access")
+            .WithName("Principal.ResourceAccess.Revoke")
+            .WithSummary("Revoke one explicit resource visibility assignment")
+            .WithDescription("Requires resource_access.assign, recent-auth, a JSON reason and the target principal aggregate's current ETag in If-Match. "
+                + "Own visibility removal is allowed. Revocation also works for disabled/roleless accounts and retired resources. "
+                + "It applies to the next scoped authorization check; owner history and identical request replays remain readable. "
+                + "It does not end an issued target grant. Returns 204 and ETag; an absent/inactive assignment with a current version is a no-op.")
+            .RequireAuthorization(PamPermissions.ResourceAccessAssign, PamPolicies.RecentAuthentication)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status412PreconditionFailed)
+            .ProducesProblem(StatusCodes.Status428PreconditionRequired);
         return endpoints;
     }
 
@@ -58,9 +73,19 @@ public static class ResourceAccessEndpoints
         return TypedResults.Ok(result.Page);
     }
 
-    private static async Task<Results<NoContent, UnauthorizedHttpResult, ProblemHttpResult>> Assign(Guid id, Guid resourceId,
+    private static Task<Results<NoContent, UnauthorizedHttpResult, ProblemHttpResult>> Assign(Guid id, Guid resourceId,
         ChangeResourceAccessRequest request, [FromHeader(Name = "If-Match")] string? ifMatch, HttpContext context,
-        IResourceAccessService service, CancellationToken cancellationToken)
+        IResourceAccessService service, CancellationToken cancellationToken) =>
+        WriteAsync(id, resourceId, request, ifMatch, context, service, true, cancellationToken);
+
+    private static Task<Results<NoContent, UnauthorizedHttpResult, ProblemHttpResult>> Revoke(Guid id, Guid resourceId,
+        [FromBody] ChangeResourceAccessRequest request, [FromHeader(Name = "If-Match")] string? ifMatch, HttpContext context,
+        IResourceAccessService service, CancellationToken cancellationToken) =>
+        WriteAsync(id, resourceId, request, ifMatch, context, service, false, cancellationToken);
+
+    private static async Task<Results<NoContent, UnauthorizedHttpResult, ProblemHttpResult>> WriteAsync(Guid id, Guid resourceId,
+        ChangeResourceAccessRequest request, string? ifMatch, HttpContext context, IResourceAccessService service,
+        bool assigned, CancellationToken cancellationToken)
     {
         if (!PamClaims.TryRead(context.User, out var identity))
         {
@@ -71,8 +96,10 @@ public static class ResourceAccessEndpoints
             return precondition;
         }
         var snapshot = new PrincipalSnapshot(identity.Id, identity.PublicId, identity.DisplayName, identity.Issuer, identity.Subject);
-        var result = await service.AssignAsync(id, resourceId, request,
-            new(snapshot, PamAuthenticationTime.Read(context.User)), version, context.TraceIdentifier, cancellationToken);
+        var actor = new AdministrativeActor(snapshot, PamAuthenticationTime.Read(context.User));
+        var result = assigned
+            ? await service.AssignAsync(id, resourceId, request, actor, version, context.TraceIdentifier, cancellationToken)
+            : await service.RevokeAsync(id, resourceId, request, actor, version, context.TraceIdentifier, cancellationToken);
         if (result.Kind != PrincipalWriteKind.Succeeded)
         {
             return WriteProblem(result.Kind);

@@ -9,4 +9,6 @@ public interface IResourceAccessService
         CancellationToken cancellationToken = default);
     Task<ResourceAccessWriteResult> AssignAsync(Guid principalId, Guid resourceId, ChangeResourceAccessRequest request,
         AdministrativeActor actor, uint expectedVersion, string correlationId, CancellationToken cancellationToken = default);
+    Task<ResourceAccessWriteResult> RevokeAsync(Guid principalId, Guid resourceId, ChangeResourceAccessRequest request,
+        AdministrativeActor actor, uint expectedVersion, string correlationId, CancellationToken cancellationToken = default);
 }

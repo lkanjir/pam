@@ -15,8 +15,16 @@ public sealed class ResourceAccessService(PamDbContext database, TimeProvider cl
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public async Task<ResourceAccessWriteResult> AssignAsync(Guid principalId, Guid resourceId, ChangeResourceAccessRequest request,
-        AdministrativeActor actor, uint expectedVersion, string correlationId, CancellationToken cancellationToken = default)
+    public Task<ResourceAccessWriteResult> AssignAsync(Guid principalId, Guid resourceId, ChangeResourceAccessRequest request,
+        AdministrativeActor actor, uint expectedVersion, string correlationId, CancellationToken cancellationToken = default) =>
+        SetAssignedAsync(principalId, resourceId, request, actor, expectedVersion, correlationId, true, cancellationToken);
+
+    public Task<ResourceAccessWriteResult> RevokeAsync(Guid principalId, Guid resourceId, ChangeResourceAccessRequest request,
+        AdministrativeActor actor, uint expectedVersion, string correlationId, CancellationToken cancellationToken = default) =>
+        SetAssignedAsync(principalId, resourceId, request, actor, expectedVersion, correlationId, false, cancellationToken);
+
+    private async Task<ResourceAccessWriteResult> SetAssignedAsync(Guid principalId, Guid resourceId, ChangeResourceAccessRequest request,
+        AdministrativeActor actor, uint expectedVersion, string correlationId, bool assigned, CancellationToken cancellationToken)
     {
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         var principals = await database.Principals.FromSql(
@@ -41,27 +49,30 @@ public sealed class ResourceAccessService(PamDbContext database, TimeProvider cl
         {
             return new(PrincipalWriteKind.PreconditionFailed);
         }
-        if (!target.IsEnabled)
+        if (assigned && !target.IsEnabled)
         {
             return new(PrincipalWriteKind.TargetDisabled);
         }
-        var supportedRoles = PamPermissionRoles.For(PamPermissions.ResourcesReadScoped);
-        if (!await database.PamRoleAssignments.AnyAsync(assignment => assignment.PrincipalId == target.Id
-            && supportedRoles.Contains(assignment.Role.Code), cancellationToken))
+        if (assigned)
         {
-            return new(PrincipalWriteKind.TargetMissingCapability);
+            var supportedRoles = PamPermissionRoles.For(PamPermissions.ResourcesReadScoped);
+            if (!await database.PamRoleAssignments.AnyAsync(assignment => assignment.PrincipalId == target.Id
+                && supportedRoles.Contains(assignment.Role.Code), cancellationToken))
+            {
+                return new(PrincipalWriteKind.TargetMissingCapability);
+            }
         }
         var resource = await database.ManagedResources.FromSql(
             $"SELECT *, xmin FROM managed_resources WHERE public_id = {resourceId} FOR UPDATE")
-            .AsNoTracking().SingleOrDefaultAsync(cancellationToken);
-        if (resource is null)
+            .IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(cancellationToken);
+        if (resource is null || (assigned && resource.DeletedAt != null))
         {
             return new(PrincipalWriteKind.NotFound);
         }
-        var binding = await database.ResourcePrincipalBindings.AsNoTracking()
+        var binding = await database.ResourcePrincipalBindings.IgnoreQueryFilters().AsNoTracking()
             .SingleOrDefaultAsync(value => value.PrincipalId == target.Id && value.ResourceId == resource.Id
                 && value.Kind == ResourceBindingKind.ViewResource, cancellationToken);
-        if (binding is { IsActive: true })
+        if ((binding is { IsActive: true }) == assigned)
         {
             return new(PrincipalWriteKind.Succeeded, target.Version);
         }
@@ -83,8 +94,9 @@ public sealed class ResourceAccessService(PamDbContext database, TimeProvider cl
         }
         else
         {
-            int bindingChanged = await database.ResourcePrincipalBindings.Where(value => value.Id == binding.Id && value.Version == binding.Version)
-                .ExecuteUpdateAsync(update => update.SetProperty(value => value.IsActive, true)
+            int bindingChanged = await database.ResourcePrincipalBindings.IgnoreQueryFilters()
+                .Where(value => value.Id == binding.Id && value.Version == binding.Version)
+                .ExecuteUpdateAsync(update => update.SetProperty(value => value.IsActive, assigned)
                     .SetProperty(value => value.ModifiedAt, now.UtcDateTime)
                     .SetProperty(value => value.ModifiedByPrincipalId, actor.Principal.Id), cancellationToken);
             if (bindingChanged != 1)
@@ -100,7 +112,7 @@ public sealed class ResourceAccessService(PamDbContext database, TimeProvider cl
         }
         database.AuditEvents.Add(new AuditEvent
         {
-            EventType = "resource_access.granted",
+            EventType = assigned ? "resource_access.granted" : "resource_access.revoked",
             SchemaVersion = 1,
             OccurredAt = now.UtcDateTime,
             ActorKind = "principal",
@@ -110,11 +122,11 @@ public sealed class ResourceAccessService(PamDbContext database, TimeProvider cl
             ActorSnapshot = JsonSerializer.Serialize(actor.Principal, JsonOptions),
             SubjectSnapshot = JsonSerializer.Serialize(new { target.PublicId, target.Issuer, target.Subject, target.DisplayName }, JsonOptions),
             ResourceSnapshot = JsonSerializer.Serialize(new { resource.PublicId, resource.Name, resource.IsActive }, JsonOptions),
-            Metadata = JsonSerializer.Serialize(new { bindingId, before = false, after = true, reason = request.Reason.Trim() }, JsonOptions),
+            Metadata = JsonSerializer.Serialize(new { bindingId, before = !assigned, after = assigned, reason = request.Reason.Trim() }, JsonOptions),
             CorrelationId = correlationId,
             Source = "pam.api",
             Outcome = "success",
-            ReasonCode = "visibility_granted"
+            ReasonCode = assigned ? "visibility_granted" : "visibility_revoked"
         });
         await database.SaveChangesAsync(cancellationToken);
         uint version = await database.Principals.Where(value => value.Id == target.Id).Select(value => value.Version).SingleAsync(cancellationToken);
