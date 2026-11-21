@@ -2,6 +2,17 @@ namespace Infrastructure.Persistence.Entities;
 
 public sealed class Principal
 {
+    public static Principal CreateMapping(string issuer, string subject, string displayName, DateTimeOffset now) => new()
+    {
+        PublicId = Guid.CreateVersion7(now),
+        Issuer = issuer,
+        Subject = subject,
+        DisplayName = displayName.Trim(),
+        IsEnabled = false,
+        CreatedAt = now.UtcDateTime,
+        ModifiedAt = now.UtcDateTime
+    };
+
     public long Id { get; init; }
     public Guid PublicId { get; init; }
     public string Issuer { get; init; } = string.Empty;

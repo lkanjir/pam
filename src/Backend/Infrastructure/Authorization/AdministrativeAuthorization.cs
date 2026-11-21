@@ -6,6 +6,10 @@ namespace Infrastructure.Authorization;
 
 internal static class AdministrativeAuthorization
 {
+    public static async Task<bool> LockAdministrationGuardAsync(PamDbContext database, CancellationToken cancellationToken) =>
+        await database.PamRoles.FromSql($"SELECT * FROM pam_roles WHERE code = {PamRoleCodes.Admin} FOR UPDATE")
+            .AsNoTracking().Select(role => role.Id).SingleOrDefaultAsync(cancellationToken) != 0;
+
     public static async Task<AdministrativeDecision> CheckAsync(PamDbContext database, TimeProvider clock,
         AdministrativeActor actor, string permission, CancellationToken cancellationToken)
     {
