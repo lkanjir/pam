@@ -12,6 +12,7 @@ public sealed class PermissionPolicyTests
     [Theory]
     [InlineData(PamPermissions.ResourcesManage, true)]
     [InlineData(PamPermissions.PrincipalsManage, true)]
+    [InlineData(PamPermissions.RolesAssign, true)]
     [InlineData(PamPermissions.ResourcesReadAll, false)]
     [InlineData(PamPermissions.PrincipalsRead, false)]
     [InlineData(PamPermissions.RolesRead, false)]
