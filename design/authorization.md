@@ -405,6 +405,14 @@ returns the explicitly assigned known bundles (at most three), and exposes the
 principal aggregate ETag. Disabled principals retain their assignments. Unknown
 DB role labels are omitted and do not grant capabilities.
 
+Delivered role grant: `PUT /api/principals/{id}/roles/{roleCode}` changes one
+known bundle on another enabled account, using `roles.assign`, recent-auth,
+reason and the principal ETag. It revokes old published sessions before granting,
+updates that ETag and commits the assignment with `role.assigned` audit. Repeating
+an existing assignment with the current version preserves sessions and creates
+no duplicate audit. A missing fixed bundle descriptor is created on its first
+explicit assignment; arbitrary bundle codes are rejected.
+
 ### Endpoint and operation matrix
 
 These are target contracts; new route names are proposed until their slice is

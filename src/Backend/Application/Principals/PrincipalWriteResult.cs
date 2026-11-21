@@ -12,7 +12,8 @@ public enum PrincipalWriteKind
     PreconditionFailed,
     SelfChangeForbidden,
     LastAdmin,
-    SessionCleanupPending
+    SessionCleanupPending,
+    TargetDisabled
 }
 
 public sealed record PrincipalWriteResult(PrincipalWriteKind Kind, PrincipalResponse? Principal = null);
