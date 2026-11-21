@@ -39,7 +39,16 @@ their dedicated fixtures. Never share a mutable database/`DbContext` between
 parallel cases; explicit application concurrency tests use separate contexts
 inside one isolated case.
 
-On 2026-11-21, a matched Release/no-build/no-restore benchmark of 193 existing
+PostgreSQL fixtures run the actual EF migrations once into a private template,
+close its connections and disable new connections to that source. Each test uses
+native `CREATE DATABASE ... TEMPLATE ...` to create a separate writable database,
+which is dropped after the test. Test-specific interceptors attach to the clone's
+context. Data, schema changes, locks and transactions stay isolated between tests.
+The dedicated development/production migration suites still start fresh databases
+and exercise migration/SQL application directly; they do not use the template.
+See [PostgreSQL template databases](https://www.postgresql.org/docs/18/manage-ag-templatedbs.html).
+
+On 2026-11-21/22, a matched Release/no-build/no-restore benchmark of 193 existing
 cases (principal enable/role assignment, eligibility/authority assignment,
 bootstrap handover and resource update) passed in both configurations:
 
@@ -47,6 +56,7 @@ bootstrap handover and resource update) passed in both configurations:
 | --- | ---: | ---: |
 | Original single storage collection | 81.3 s | 1 |
 | Four bounded storage collections | 40.7 s | 4 |
+| Four collections with migrated-template clones | 30.3 s | 4 |
 
 Each figure is one local run with cached Docker images; fixture startup and the
 same TRX logging are included. This measures that subset on this machine, rather
@@ -77,7 +87,9 @@ and that execution actually overlapped. See [xUnit collection scheduling](https:
 - FakeItEasy for external interfaces in unit tests; real in-process DI and Data
   Protection where useful. No custom proxy/mock framework.
 - Testcontainers PostgreSQL/Redis for storage integration tests.
-- Actual EF migrations (`MigrateAsync`), not `EnsureCreated` or an in-memory EF provider.
+- Actual EF migrations (`MigrateAsync`) build a protected template once per
+  PostgreSQL fixture; each test gets a fresh native database clone. No
+  `EnsureCreated`, transaction rollback substitute or in-memory EF provider.
 - A real ASP.NET cookie handler for successful sign-in and rejection on failed DB writes.
 
 Current coverage focuses on session creation, ledger/audit atomicity, cleanup on

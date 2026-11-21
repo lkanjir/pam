@@ -8,9 +8,27 @@ namespace Backend.IntegrationTests.Fixtures;
 
 public sealed class PostgresFixture : IAsyncLifetime
 {
+    private const string TemplateDatabaseName = "pam_test_template";
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:18.0-alpine").Build();
 
-    public Task InitializeAsync() => _container.StartAsync();
+    public async Task InitializeAsync()
+    {
+        await _container.StartAsync();
+        await using var admin = new NpgsqlConnection(_container.GetConnectionString());
+        await admin.OpenAsync();
+        await using (var create = new NpgsqlCommand($"CREATE DATABASE {TemplateDatabaseName}", admin))
+        {
+            await create.ExecuteNonQueryAsync();
+        }
+        // Apply the real migrations once, then close every template connection.
+        // No test receives this database, so schema/data mutations stay in clones.
+        await using (var template = CreateContext(TemplateDatabaseName))
+        {
+            await template.Database.MigrateAsync();
+        }
+        await using var protect = new NpgsqlCommand($"ALTER DATABASE {TemplateDatabaseName} ALLOW_CONNECTIONS false", admin);
+        await protect.ExecuteNonQueryAsync();
+    }
     public Task DisposeAsync() => _container.DisposeAsync().AsTask();
 
     public async Task<TestDatabase> CreateDatabaseAsync(params IInterceptor[] interceptors)
@@ -18,8 +36,13 @@ public sealed class PostgresFixture : IAsyncLifetime
         var name = "test_" + Guid.NewGuid().ToString("N");
         await using var admin = new NpgsqlConnection(_container.GetConnectionString());
         await admin.OpenAsync();
-        await using var command = new NpgsqlCommand($"CREATE DATABASE \"{name}\"", admin);
+        await using var command = new NpgsqlCommand($"CREATE DATABASE \"{name}\" TEMPLATE {TemplateDatabaseName}", admin);
         await command.ExecuteNonQueryAsync();
+        return new TestDatabase(CreateContext(name, interceptors), _container.GetConnectionString(), name);
+    }
+
+    private PamDbContext CreateContext(string name, params IInterceptor[] interceptors)
+    {
         var connection = new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
         {
             Database = name,
@@ -30,9 +53,7 @@ public sealed class PostgresFixture : IAsyncLifetime
             .UseSnakeCaseNamingConvention()
             .AddInterceptors(interceptors)
             .Options;
-        var database = new TestDatabase(new PamDbContext(options), _container.GetConnectionString(), name);
-        await database.Context.Database.MigrateAsync();
-        return database;
+        return new PamDbContext(options);
     }
 }
 
