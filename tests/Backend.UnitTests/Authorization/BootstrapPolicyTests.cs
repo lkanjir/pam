@@ -12,6 +12,7 @@ public sealed class BootstrapPolicyTests
 {
     [Theory]
     [InlineData(PamPermissions.BootstrapRead, true)]
+    [InlineData(PamPermissions.BootstrapComplete, false)]
     [InlineData(PamPermissions.PrincipalsRead, true)]
     [InlineData(PamPermissions.PrincipalsManage, true)]
     [InlineData(PamPermissions.RolesRead, true)]
