@@ -185,8 +185,9 @@ existing Development-only OpenAPI surface. No production Swagger expansion.
 Existing issuer/sub mappings are immutable. Display names and email addresses
 cannot select a different identity or silently transfer an existing principal.
 
-No cross-request cache of authorization grants initially. Cookie validation keeps
-its current enabled/role check; resource scopes are read from the database, not
+No cross-request cache of authorization grants initially. Cookie validation checks
+the current enabled state, full identity tuple (internal/public ID and issuer/sub)
+and explicit role set; resource scopes are read from the database, not
 copied into long-lived tickets. A role change revokes the stale PAM session on its
 next authentication attempt. A scope change applies on the next authorization
 check without requiring a fresh login. DB/Redis outages fail closed with the

@@ -9,11 +9,11 @@ public sealed class PamCookieEvents(IPrincipalIdentityReader principalReader) : 
 {
     public override async Task ValidatePrincipal(CookieValidatePrincipalContext context)
     {
-        if (PamClaims.TryRead(context.Principal!, out var identity))
+        if (context.Principal is { } principal && PamClaims.TryRead(principal, out var identity))
         {
             var current = await principalReader.FindAsync(identity.Issuer, identity.Subject,
                 context.HttpContext.RequestAborted);
-            if (current is { IsEnabled: true } && current.Id == identity.Id
+            if (current is { IsEnabled: true } && current.Id == identity.Id && current.PublicId == identity.PublicId
                 && current.Roles.ToHashSet(StringComparer.Ordinal).SetEquals(identity.Roles))
             {
                 return;

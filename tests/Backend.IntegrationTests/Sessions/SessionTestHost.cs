@@ -132,8 +132,19 @@ internal static class SessionTestHost
     {
         await using var scope = services.CreateAsyncScope();
         var context = CreateContext(scope.ServiceProvider);
-        var ticket = SessionTestData.Ticket(clock.GetUtcNow(), principalId);
-        await context.SignInAsync("Cookies", ticket.Principal, ticket.Properties);
+        long id = long.Parse(principalId, System.Globalization.CultureInfo.InvariantCulture);
+        var mapping = await scope.ServiceProvider.GetRequiredService<PamDbContext>().Principals.AsNoTracking()
+            .SingleAsync(principal => principal.Id == id);
+        var current = await scope.ServiceProvider.GetRequiredService<IPrincipalIdentityReader>()
+            .FindAsync(mapping.Issuer, mapping.Subject)
+            ?? throw new InvalidOperationException("The test principal was not found.");
+        var principal = PamClaims.Create(current, mapping.Issuer, mapping.Subject, "idp-session", clock.GetUtcNow());
+        var properties = new AuthenticationProperties
+        {
+            IssuedUtc = clock.GetUtcNow(),
+            ExpiresUtc = clock.GetUtcNow().AddMinutes(30)
+        };
+        await context.SignInAsync("Cookies", principal, properties);
         return context.Response.Headers.SetCookie
             .Single(value => value!.StartsWith("pam.session=", StringComparison.Ordinal))!.Split(';')[0];
     }
