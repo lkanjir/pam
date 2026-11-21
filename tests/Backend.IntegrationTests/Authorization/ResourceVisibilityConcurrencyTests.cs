@@ -181,6 +181,61 @@ public sealed class ResourceVisibilityConcurrencyTests(PostgresFixture postgres,
         Assert.True(await test.Database.Context.EligibilityRules.AnyAsync(value => value.PrincipalId == requester.Id && value.IsEnabled));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Submit_ConcurrentEligibilityRevocation_UsesTheSerializedPolicyState(bool revocationFirst)
+    {
+        // Arrange
+        await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection);
+        var entitlement = await SeedEntitlementAsync(test);
+        var requester = await test.Database.Context.Principals.AsNoTracking().SingleAsync(value => value.Id == test.ActorId);
+        var gate = new AuditGate(revocationFirst ? "eligibility.revoked" : "access_request.created");
+        var attempt = new CommandAttempt("FROM principals", "FOR UPDATE");
+        await using var submissionContext = Context(test, revocationFirst ? attempt : gate);
+        await using var revocationContext = Context(test, revocationFirst ? gate : attempt);
+        var requests = new AccessRequestService(submissionContext, test.Clock);
+        var eligibility = new EligibilityService(revocationContext, test.Clock);
+        Task<AccessRequestSubmissionResult> submission;
+        Task<EligibilityWriteResult> revocation;
+
+        // Act
+        if (revocationFirst)
+        {
+            revocation = eligibility.RevokeAsync(requester.PublicId, test.Resource.PublicId, entitlement.PublicId,
+                new() { Reason = "Revoke own eligibility" }, new(Snapshot(requester), test.Clock.Now), requester.Version, "eligibility-first");
+            await gate.Ready.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            submission = requests.SubmitAsync(Request(test, entitlement), "pending-request", Snapshot(requester), "submit-second");
+        }
+        else
+        {
+            submission = requests.SubmitAsync(Request(test, entitlement), "pending-request", Snapshot(requester), "submit-first");
+            await gate.Ready.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            revocation = eligibility.RevokeAsync(requester.PublicId, test.Resource.PublicId, entitlement.PublicId,
+                new() { Reason = "Revoke own eligibility" }, new(Snapshot(requester), test.Clock.Now), requester.Version, "eligibility-second");
+        }
+        try
+        {
+            await attempt.Started.Task.WaitAsync(TimeSpan.FromSeconds(20));
+        }
+        finally
+        {
+            gate.Release.TrySetResult();
+        }
+        var submitted = await submission;
+        var revoked = await revocation;
+
+        // Assert
+        Assert.Equal(PrincipalWriteKind.Succeeded, revoked.Kind);
+        Assert.Equal(AccessRequestSubmissionKind.Created, submitted.Kind);
+        Assert.NotNull(submitted.Request);
+        Assert.Equal(revocationFirst ? "Denied" : "PendingApproval", submitted.Request.State);
+        Assert.Equal(1, await test.Database.Context.AccessRequests.CountAsync());
+        Assert.Equal(1, await test.Database.Context.PolicyEvaluations.CountAsync());
+        Assert.False(await test.Database.Context.EligibilityRules.Select(value => value.IsEnabled).SingleAsync());
+        Assert.True(await test.Database.Context.ResourcePrincipalBindings.Select(value => value.IsActive).SingleAsync());
+    }
+
     private static async Task<Principal> AddAdminAsync(ResourceTestContext test)
     {
         var admin = Principal.CreateMapping("https://identity.example/realms/pam", "second-admin", "Second Admin", test.Clock.Now);
