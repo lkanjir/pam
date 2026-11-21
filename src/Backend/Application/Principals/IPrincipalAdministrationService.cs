@@ -5,6 +5,7 @@ namespace Application.Principals;
 
 public interface IPrincipalAdministrationService
 {
+    Task<PrincipalAuthorizationOverviewResponse?> GetAuthorizationOverviewAsync(Guid id, CancellationToken cancellationToken = default);
     Task<CursorPage<PrincipalResponse>> ListAsync(int limit, PrincipalCursor? cursor, CancellationToken cancellationToken = default);
     Task<PrincipalResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<PrincipalWriteResult> CreateAsync(CreatePrincipalRequest request, AdministrativeActor actor,

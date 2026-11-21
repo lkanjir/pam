@@ -37,6 +37,19 @@ public static class PrincipalEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
+        endpoints.MapGet("/principals/{id:guid}/authorization", GetAuthorizationOverview)
+            .WithTags("Principals")
+            .WithName("Principal.Authorization.Get")
+            .WithSummary("Review a principal's retained authorization before enabling the account")
+            .WithDescription("Requires principals.read, roles.read, resource_access.read, eligibility.read and approval_authority.read together. "
+                + "Returns the account, at most three known bundles, configured active/inactive counts and unavailable-parent counts from one SQL snapshot, with principal ETag. "
+                + "Counts include retained disabled/retired relationships and do not represent effective access. Links lead to bounded detail collections. "
+                + "A view/authority parent is unavailable when retired; eligibility also reports inactive resources/entitlements. No recent-auth is required for this read.")
+            .RequireAuthorization(PamPermissions.PrincipalsRead, PamPermissions.RolesRead, PamPermissions.ResourceAccessRead,
+                PamPermissions.EligibilityRead, PamPermissions.ApprovalAuthorityRead)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
         endpoints.MapPost("/principals", Create)
             .WithTags("Principals")
             .WithName("Principal.Create")
@@ -97,6 +110,25 @@ public static class PrincipalEndpoints
             context.Response.Headers.ETag = ResourceEtags.Format(principal.Version);
         }
         return principal is null ? TypedResults.NotFound() : TypedResults.Ok(principal);
+    }
+
+    private static async Task<Results<Ok<PrincipalAuthorizationOverviewResponse>, NotFound>> GetAuthorizationOverview(Guid id,
+        HttpContext context, IPrincipalAdministrationService service, LinkGenerator links, CancellationToken cancellationToken)
+    {
+        var result = await service.GetAuthorizationOverviewAsync(id, cancellationToken);
+        if (result is null)
+        {
+            return TypedResults.NotFound();
+        }
+        context.Response.Headers.ETag = ResourceEtags.Format(result.Principal.Version);
+        return TypedResults.Ok(result with
+        {
+            Links = new(
+                links.GetPathByName(context, "Principal.Roles.Get", new { id }) ?? throw new InvalidOperationException("Role collection route is missing."),
+                links.GetPathByName(context, "Principal.ResourceAccess.List", new { id }) ?? throw new InvalidOperationException("View collection route is missing."),
+                links.GetPathByName(context, "Principal.Eligibility.List", new { id }) ?? throw new InvalidOperationException("Eligibility collection route is missing."),
+                links.GetPathByName(context, "Principal.ApprovalAuthority.List", new { id }) ?? throw new InvalidOperationException("Authority collection route is missing."))
+        });
     }
 
     private static async Task<Results<CreatedAtRoute<PrincipalResponse>, UnauthorizedHttpResult, ProblemHttpResult>> Create(

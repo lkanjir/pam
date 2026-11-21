@@ -173,6 +173,39 @@ public sealed class PrincipalAdministrationService(PamDbContext database, TimePr
         return new(PrincipalWriteKind.Succeeded, response);
     }
 
+    public Task<PrincipalAuthorizationOverviewResponse?> GetAuthorizationOverviewAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var bindings = database.ResourcePrincipalBindings.IgnoreQueryFilters();
+        var rules = from rule in database.EligibilityRules.IgnoreQueryFilters()
+                    join entitlement in database.Entitlements.IgnoreQueryFilters() on rule.EntitlementId equals entitlement.Id
+                    join resource in database.ManagedResources.IgnoreQueryFilters() on entitlement.ResourceId equals resource.Id
+                    select new { Rule = rule, Entitlement = entitlement, Resource = resource };
+        return database.Principals.AsNoTracking().AsSingleQuery().Where(principal => principal.PublicId == id)
+            .Select(principal => new PrincipalAuthorizationOverviewResponse(
+                new PrincipalResponse(principal.PublicId, principal.Issuer, principal.Subject, principal.DisplayName, principal.IsEnabled,
+                    new DateTimeOffset(principal.CreatedAt, TimeSpan.Zero), new DateTimeOffset(principal.ModifiedAt, TimeSpan.Zero))
+                { Version = principal.Version },
+                principal.RoleAssignments.Where(assignment => assignment.Role.Code == PamRoleCodes.Admin
+                    || assignment.Role.Code == PamRoleCodes.User || assignment.Role.Code == PamRoleCodes.Approver)
+                    .OrderBy(assignment => assignment.Role.Code).Select(assignment => assignment.Role.Code).ToList(),
+                new PrincipalAssignmentCounts(
+                    bindings.LongCount(binding => binding.PrincipalId == principal.Id && binding.Kind == ResourceBindingKind.ViewResource && binding.IsActive),
+                    bindings.LongCount(binding => binding.PrincipalId == principal.Id && binding.Kind == ResourceBindingKind.ViewResource && !binding.IsActive),
+                    bindings.LongCount(binding => binding.PrincipalId == principal.Id && binding.Kind == ResourceBindingKind.ViewResource
+                        && binding.Resource != null && binding.Resource.DeletedAt != null)),
+                new PrincipalAssignmentCounts(
+                    rules.LongCount(item => item.Rule.PrincipalId == principal.Id && item.Rule.IsEnabled),
+                    rules.LongCount(item => item.Rule.PrincipalId == principal.Id && !item.Rule.IsEnabled),
+                    rules.LongCount(item => item.Rule.PrincipalId == principal.Id
+                        && (item.Resource.DeletedAt != null || !item.Resource.IsActive || !item.Entitlement.IsActive))),
+                new PrincipalAssignmentCounts(
+                    bindings.LongCount(binding => binding.PrincipalId == principal.Id && binding.Kind == ResourceBindingKind.ApproveRequests && binding.IsActive),
+                    bindings.LongCount(binding => binding.PrincipalId == principal.Id && binding.Kind == ResourceBindingKind.ApproveRequests && !binding.IsActive),
+                    bindings.LongCount(binding => binding.PrincipalId == principal.Id && binding.Kind == ResourceBindingKind.ApproveRequests
+                        && binding.Resource != null && binding.Resource.DeletedAt != null))))
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
     public Task<PrincipalResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         database.Principals.AsNoTracking().Where(principal => principal.PublicId == id)
             .Select(principal => new PrincipalResponse(principal.PublicId, principal.Issuer, principal.Subject,

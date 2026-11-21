@@ -515,6 +515,14 @@ resources can be cleaned up. Authority/audit/ETag change atomically; independent
 view/eligibility and issued target grants remain separate. Successful revocation
 and current-version inactive retries return 204.
 
+Delivered authorization overview: `GET /api/principals/{id}/authorization`
+requires all five administrative read permissions together. One SQL snapshot
+returns principal state, known explicit bundles and configured active/inactive
+counts for view, eligibility and approval authority, with principal ETag. Counts
+retain unavailable parents separately and do not claim effective access. Native
+ASP.NET link generation points to each bounded detail collection for pre-enable
+review. This read changes no grants.
+
 ### Endpoint and operation matrix
 
 These are target contracts; new route names are proposed until their slice is
