@@ -34,6 +34,9 @@ public interface IResourceService
         ResourceCursor? cursor,
         CancellationToken cancellationToken = default);
 
+    Task<CursorPage<ResourceResponse>> ListVisibleAsync(long principalId, int limit, ResourceCursor? cursor,
+        CancellationToken cancellationToken = default);
+
     Task<CursorPage<ResourceResponse>> ListRequestableAsync(
         long principalId,
         int limit,

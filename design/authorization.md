@@ -430,7 +430,7 @@ New submissions hold requester/resource locks through policy persistence; replay
 and owner history do not depend on current visibility. Losing the last supporting
 scoped-read bundle atomically deactivates view bindings with exact per-row audit.
 This schema migration grants no existing account visibility automatically. The
-scoped catalog is a subsequent slice.
+visibility management and the scoped catalog now use the explicit view relationship.
 
 Delivered visibility administration read: `GET /api/principals/{id}/resource-access`
 requires `resource_access.read` and returns a bounded ascending resource-ID page,
@@ -453,6 +453,12 @@ own removal, disabled/roleless targets and retired resources, deactivating the
 relationship with `resource_access.revoked` audit and a new principal ETag. A
 current-version absent/inactive retry is a no-op. It changes scoped checks, not
 owner history/replay or an already-issued target grant.
+
+Delivered scoped catalog: `GET /api/resources/visible` requires `resources.read_scoped`
+and applies current visibility in SQL before bounded cursor pagination. It includes
+assigned inactive resources, excludes retired resources and returns no entitlement
+eligibility or other principals' assignments. ReadAll remains a separate management
+catalog; an Admin/User account receives no implicit scoped visibility.
 
 ### Endpoint and operation matrix
 

@@ -196,47 +196,31 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
         return ResourceWriteKind.Succeeded;
     }
 
-    public async Task<CursorPage<ResourceResponse>> ListAsync(
-        int limit,
-        ResourceCursor? cursor,
-        CancellationToken cancellationToken = default)
-    {
-        var resources = dbContext.ManagedResources.AsNoTracking();
+    public Task<CursorPage<ResourceResponse>> ListAsync(int limit, ResourceCursor? cursor,
+        CancellationToken cancellationToken = default) =>
+        ListPageAsync(dbContext.ManagedResources, limit, cursor, cancellationToken);
 
+    public Task<CursorPage<ResourceResponse>> ListVisibleAsync(long principalId, int limit, ResourceCursor? cursor,
+        CancellationToken cancellationToken = default) =>
+        ListPageAsync(ResourceScopedAuthorization.VisibleResources(dbContext, principalId), limit, cursor, cancellationToken);
+
+    private static async Task<CursorPage<ResourceResponse>> ListPageAsync(IQueryable<ManagedResource> resources, int limit,
+        ResourceCursor? cursor, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, 100);
         if (cursor is not null)
         {
             Guid lastPublicId = cursor.LastPublicId;
-
-            resources = resources.Where(
-                resource => resource.PublicId.CompareTo(lastPublicId) > 0);
+            resources = resources.Where(resource => resource.PublicId.CompareTo(lastPublicId) > 0);
         }
-
-        var items = await resources
-            .OrderBy(resource => resource.PublicId)
-            .Select(resource => new ResourceResponse(
-                resource.PublicId,
-                resource.Name,
-                resource.Description,
-                resource.ResourceType,
-                resource.Environment,
-                resource.IsActive,
-                resource.CreatedAt,
-                resource.ModifiedAt))
-            .Take(limit + 1)
-            .ToListAsync(cancellationToken);
-
-        bool hasNextPage = items.Count > limit;
-
-        if (hasNextPage)
+        var items = await Project(resources.OrderBy(resource => resource.PublicId).Take(limit + 1)).ToListAsync(cancellationToken);
+        bool hasMore = items.Count > limit;
+        if (hasMore)
         {
             items.RemoveAt(limit);
         }
-
-        string? nextCursor = hasNextPage
-            ? CursorCodec.Encode(new ResourceCursor(items[^1].Id))
-            : null;
-
-        return new CursorPage<ResourceResponse>(items, nextCursor);
+        return new(items, hasMore ? CursorCodec.Encode(new ResourceCursor(items[^1].Id)) : null);
     }
 
     public async Task<CursorPage<ResourceResponse>> ListRequestableAsync(

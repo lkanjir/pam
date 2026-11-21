@@ -28,6 +28,16 @@ public static class ResourceEndpoints
                 + "Uses limit and cursor pagination.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status400BadRequest);
+        resources.MapGet("/visible", ListVisible)
+            .WithName("Resource.ListVisible")
+            .WithSummary("List resources in the caller's explicit visibility scope")
+            .WithDescription("Requires resources.read_scoped. Filters current active view bindings before ascending public-ID pagination. "
+                + "Includes inactive resources with a view assignment, excludes retired resources and returns no entitlement eligibility or other users' assignments. "
+                + "A view does not grant target access. Limit defaults to 20, range 1–100. Administrative read_all does not imply this requester/approver scope.")
+            .RequireAuthorization(PamPermissions.ResourcesReadScoped)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
         resources.MapGet("/{id:guid}", GetById).WithName(GetByIdRouteName)
             .WithMetadata(new PamConditionalPermissionMetadata(PamPermissions.ResourcesReadAll, PamPermissions.ResourcesReadScoped))
             .WithSummary("Read a resource through management or explicit scoped visibility")
@@ -108,6 +118,17 @@ public static class ResourceEndpoints
             cancellationToken);
 
         return TypedResults.Ok(page);
+    }
+
+    private static async Task<Results<Ok<CursorPage<ResourceResponse>>, UnauthorizedHttpResult>> ListVisible(
+        [AsParameters] VisibleResourceListQuery query, HttpContext context, IResourceService resourceService,
+        CancellationToken cancellationToken)
+    {
+        if (!PamClaims.TryRead(context.User, out var identity))
+        {
+            return TypedResults.Unauthorized();
+        }
+        return TypedResults.Ok(await resourceService.ListVisibleAsync(identity.Id, query.Limit, query.Cursor, cancellationToken));
     }
 
     private static async Task<Results<Ok<ResourceResponse>, NotFound, UnauthorizedHttpResult, ForbidHttpResult>> GetById(
