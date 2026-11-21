@@ -21,7 +21,7 @@ using static Backend.IntegrationTests.AccessRequests.AccessRequestTestData;
 
 namespace Backend.IntegrationTests.Authorization;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection3.Name)]
 public sealed class PrincipalDisableTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Fact]

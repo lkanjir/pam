@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Backend.IntegrationTests.Authorization;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection3.Name)]
 public sealed class PrincipalVersionTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Fact]

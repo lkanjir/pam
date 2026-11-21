@@ -17,7 +17,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Backend.IntegrationTests.Authorization;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection1.Name)]
 public sealed class BootstrapHandoverTests(PostgresFixture postgres, RedisFixture redis)
 {
     private const string CompleteUrl = "/api/authorization/bootstrap/complete";

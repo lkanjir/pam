@@ -19,7 +19,7 @@ using Microsoft.Extensions.Options;
 
 namespace Backend.IntegrationTests.Authorization;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection2.Name)]
 public sealed class PrincipalAuthorizationOverviewTests(PostgresFixture postgres, RedisFixture redis)
 {
     private static readonly string[] ExpectedRoles = ["approver", "user"];

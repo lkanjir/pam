@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Backend.IntegrationTests.Authorization;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection1.Name)]
 public sealed class VisibleResourceListTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]

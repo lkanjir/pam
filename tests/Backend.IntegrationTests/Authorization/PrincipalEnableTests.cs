@@ -19,7 +19,7 @@ using StackExchange.Redis;
 
 namespace Backend.IntegrationTests.Authorization;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection4.Name)]
 public sealed class PrincipalEnableTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Fact]

@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Backend.IntegrationTests.Sessions;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection3.Name)]
 public sealed class OrphanSessionLeaseTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]

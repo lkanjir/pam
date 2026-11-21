@@ -5,7 +5,7 @@ using static Backend.IntegrationTests.AccessRequests.AccessRequestTestData;
 
 namespace Backend.IntegrationTests.Errors;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection1.Name)]
 public sealed class ApiCacheControlTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]

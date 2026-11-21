@@ -13,7 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Backend.IntegrationTests.Authorization;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection1.Name)]
 public sealed class PrincipalMappingTests(PostgresFixture postgres, RedisFixture redis)
 {
     private static readonly string[] ForgedRoles = ["admin"];

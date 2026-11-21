@@ -18,7 +18,7 @@ using StackExchange.Redis;
 
 namespace Backend.IntegrationTests.Authorization;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection3.Name)]
 public sealed class PrincipalRoleAssignmentTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]

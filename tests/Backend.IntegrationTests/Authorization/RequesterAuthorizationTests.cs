@@ -12,7 +12,7 @@ using static Backend.IntegrationTests.AccessRequests.AccessRequestTestData;
 
 namespace Backend.IntegrationTests.Authorization;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection1.Name)]
 public sealed class RequesterAuthorizationTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]

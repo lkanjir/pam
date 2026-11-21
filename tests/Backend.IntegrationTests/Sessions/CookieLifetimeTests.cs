@@ -9,7 +9,7 @@ using static Backend.IntegrationTests.Sessions.SessionTestHost;
 
 namespace Backend.IntegrationTests.Sessions;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection4.Name)]
 public sealed class CookieLifetimeTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Fact]

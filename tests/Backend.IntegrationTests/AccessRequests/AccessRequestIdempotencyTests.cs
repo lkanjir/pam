@@ -15,7 +15,7 @@ using static Backend.IntegrationTests.AccessRequests.AccessRequestTestData;
 
 namespace Backend.IntegrationTests.AccessRequests;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection4.Name)]
 public sealed class AccessRequestIdempotencyTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]

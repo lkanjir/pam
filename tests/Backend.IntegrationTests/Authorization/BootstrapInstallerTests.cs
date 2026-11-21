@@ -7,7 +7,7 @@ using Npgsql;
 
 namespace Backend.IntegrationTests.Authorization;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection3.Name)]
 public sealed class BootstrapInstallerTests(PostgresFixture postgres)
 {
     [Fact]

@@ -15,7 +15,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Backend.IntegrationTests.Authorization;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection4.Name)]
 public sealed class EligibilityReadTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]

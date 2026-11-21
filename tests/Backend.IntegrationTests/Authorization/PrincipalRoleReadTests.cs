@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Backend.IntegrationTests.Authorization;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection4.Name)]
 public sealed class PrincipalRoleReadTests(PostgresFixture postgres, RedisFixture redis)
 {
     private static readonly string[] KnownBundles = ["admin", "approver", "user"];

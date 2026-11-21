@@ -13,7 +13,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Backend.IntegrationTests.Resources;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection4.Name)]
 public sealed class ResourceConcurrencyTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]

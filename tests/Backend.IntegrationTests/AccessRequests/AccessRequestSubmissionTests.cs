@@ -10,7 +10,7 @@ using static Backend.IntegrationTests.AccessRequests.AccessRequestTestData;
 
 namespace Backend.IntegrationTests.AccessRequests;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection2.Name)]
 public sealed class AccessRequestSubmissionTests(PostgresFixture postgres, RedisFixture redis)
 {
     private static readonly string[] DuplicateIdempotencyKeys = ["first-key", "second-key"];

@@ -14,7 +14,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Backend.IntegrationTests.Authorization;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection4.Name)]
 public sealed class ResourceAccessAssignmentTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]

@@ -20,7 +20,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Backend.IntegrationTests.Authentication;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection1.Name)]
 public sealed class OidcReauthenticationTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]

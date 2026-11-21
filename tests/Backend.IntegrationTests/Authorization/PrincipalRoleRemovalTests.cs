@@ -19,7 +19,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Backend.IntegrationTests.Authorization;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection2.Name)]
 public sealed class PrincipalRoleRemovalTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]

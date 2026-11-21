@@ -18,8 +18,40 @@ is a test setup failure, not a silent skip.
 Both projects are included in `src/Backend/Backend.sln`:
 
 ```sh
-dotnet test src/Backend/Backend.sln -m:1
+dotnet test src/Backend/Backend.sln
 ```
+
+## Parallel execution and storage isolation
+
+Integration tests use xUnit's native collection scheduling, capped at **four
+concurrent collections** through `CollectionBehavior(MaxParallelThreads = 4)`.
+The four `StorageCollection1`–`StorageCollection4` collections each own an
+independent PostgreSQL/Redis container pair. Tests inside a collection remain
+sequential, and each test still creates a separate PostgreSQL database. Standalone
+class fixtures also respect the assembly's concurrency cap. No runner/package
+change or custom scheduler is required.
+
+Assign new HTTP/storage test classes to one of these collections using
+`[Collection(StorageCollection1.Name)]` (or 2–4), spreading larger suites across
+them. Do not put all storage classes back into one collection: xUnit serializes
+classes in the same collection. Tests for custom migration environments retain
+their dedicated fixtures. Never share a mutable database/`DbContext` between
+parallel cases; explicit application concurrency tests use separate contexts
+inside one isolated case.
+
+On 2026-11-21, a matched Release/no-build/no-restore benchmark of 193 existing
+cases (principal enable/role assignment, eligibility/authority assignment,
+bootstrap handover and resource update) passed in both configurations:
+
+| Configuration | Process wall time | Peak overlapping test cases |
+| --- | ---: | ---: |
+| Original single storage collection | 81.3 s | 1 |
+| Four bounded storage collections | 40.7 s | 4 |
+
+Each figure is one local run with cached Docker images; fixture startup and the
+same TRX logging are included. This measures that subset on this machine, rather
+than promising a fixed CI speedup. TRX results confirmed the same 193 cases passed
+and that execution actually overlapped. See [xUnit collection scheduling](https://xunit.net/docs/running-tests-in-parallel).
 
 ## Seven test conventions
 

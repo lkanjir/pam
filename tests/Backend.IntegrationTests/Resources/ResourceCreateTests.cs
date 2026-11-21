@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Backend.IntegrationTests.Resources;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection3.Name)]
 public sealed class ResourceCreateTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]

@@ -8,7 +8,7 @@ using Infrastructure.Persistence.Entities;
 
 namespace Backend.IntegrationTests.Resources;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection4.Name)]
 public sealed class RequestableResourceTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Fact]

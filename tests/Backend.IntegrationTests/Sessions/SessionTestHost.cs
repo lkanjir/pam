@@ -21,9 +21,6 @@ using StackExchange.Redis;
 
 namespace Backend.IntegrationTests.Sessions;
 
-[CollectionDefinition("Cookie sessions")]
-public sealed class CookieSessionTestGroup : ICollectionFixture<PostgresFixture>, ICollectionFixture<RedisFixture>;
-
 internal static class SessionTestHost
 {
     public static async Task<WebApplication> CreateSessionServerAsync(
