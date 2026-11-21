@@ -276,7 +276,7 @@ public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixtur
         string id = await test.StartAsync();
         string hash = SessionIdentifier.Hash(id);
         await test.Tickets.EndAsync(new PendingSessionEnd(hash, test.Clock.Now, "logout", "first"));
-        var writer = new SessionLedgerWriter(test.Database.Context);
+        var writer = new SessionLedgerWriter(test.Database.Context, test.Clock);
         await writer.RecordEndedAsync(hash, test.Clock.Now, "logout", "first");
 
         // Act
@@ -299,7 +299,7 @@ public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixtur
         A.CallTo(() => tickets.ObserveAsync(A<string>._))
             .ThrowsAsync(new StackExchange.Redis.RedisConnectionException(StackExchange.Redis.ConnectionFailureType.UnableToConnect, StackExchange.Redis.CommandFlags.None, "offline"));
         var reconciler = new SessionReconciler(test.Database.Context, tickets,
-            new SessionLedgerWriter(test.Database.Context), test.Clock, NullLogger<SessionReconciler>.Instance);
+            new SessionLedgerWriter(test.Database.Context, test.Clock), test.Clock, NullLogger<SessionReconciler>.Instance);
 
         // Act
         await Assert.ThrowsAsync<StackExchange.Redis.RedisConnectionException>(() => reconciler.RunAsync(new(), 10));
@@ -317,7 +317,7 @@ public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixtur
         await using var test = await RecoveryContext.CreateAsync(postgres, redis);
         var tickets = A.Fake<ISessionTicketStore>();
         var reconciler = new SessionReconciler(test.Database.Context, tickets,
-            new SessionLedgerWriter(test.Database.Context), test.Clock, NullLogger<SessionReconciler>.Instance);
+            new SessionLedgerWriter(test.Database.Context, test.Clock), test.Clock, NullLogger<SessionReconciler>.Instance);
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
@@ -397,7 +397,7 @@ public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixtur
         {
             await using var scope = services.CreateAsyncScope();
             var context = scope.ServiceProvider.GetRequiredService<PamDbContext>();
-            var reconciler = new SessionReconciler(context, Tickets, new SessionLedgerWriter(context), clock,
+            var reconciler = new SessionReconciler(context, Tickets, new SessionLedgerWriter(context, clock), clock,
                 NullLogger<SessionReconciler>.Instance);
             return await reconciler.RunAsync(position ?? new(), limit);
         }

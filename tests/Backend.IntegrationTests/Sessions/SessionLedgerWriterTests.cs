@@ -1,5 +1,6 @@
 using Application.Sessions;
 using Backend.IntegrationTests.Fixtures;
+using Backend.Tests.Support;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Entities;
 using Infrastructure.Sessions;
@@ -18,7 +19,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
 
         // Act
         await writer.RecordStartedAsync(session);
@@ -36,7 +37,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
 
         // Give SQL's current principal snapshot the same source values as the start event.
         await database.Context.Database.ExecuteSqlInterpolatedAsync(
@@ -75,7 +76,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         var session = await CreateSessionAsync(database.Context);
         await database.Context.Database.ExecuteSqlRawAsync(
             "ALTER TABLE audit_events ADD CONSTRAINT reject_test_event CHECK (event_type <> 'authentication.session.started')");
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
 
         // Act
         await Assert.ThrowsAsync<DbUpdateException>(() => writer.RecordStartedAsync(session));
@@ -93,7 +94,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         var session = await CreateSessionAsync(database.Context);
         await database.Context.Database.ExecuteSqlRawAsync(
             "ALTER TABLE authentication_session_ledger ADD CONSTRAINT reject_test_session CHECK (session_id_hash = 'never')");
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
 
         // Act
         await Assert.ThrowsAsync<DbUpdateException>(() => writer.RecordStartedAsync(session));
@@ -108,7 +109,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
         var expiry = session.ExpectedExpiresAt.AddMinutes(15);
 
@@ -126,7 +127,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
 
         // Act
@@ -143,7 +144,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
         await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout", "end-request");
 
@@ -160,7 +161,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
 
         // Act
@@ -181,7 +182,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
         await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout", "end-request");
 
@@ -199,7 +200,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
         await database.Context.Database.ExecuteSqlRawAsync(
             "ALTER TABLE audit_events ADD CONSTRAINT reject_session_end CHECK (event_type <> 'authentication.session.ended')");
@@ -224,7 +225,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
 
         // Act
@@ -243,7 +244,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
         await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1),
             "logout", "original-request");

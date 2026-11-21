@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Sessions;
 
-public sealed class SessionLedgerWriter(PamDbContext dbContext) : ISessionLedgerWriter
+public sealed class SessionLedgerWriter(PamDbContext dbContext, TimeProvider clock) : ISessionLedgerWriter
 {
     // This JSON contract is also produced by jsonb_build_object in RecordEndedAsync.
     private static readonly JsonSerializerOptions SnapshotJsonOptions = new()
@@ -16,6 +16,12 @@ public sealed class SessionLedgerWriter(PamDbContext dbContext) : ISessionLedger
 
     public async Task RecordStartedAsync(SessionStarted session, CancellationToken cancellationToken = default)
     {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await SessionPublicationGuard.LockAsync(dbContext, session.SessionIdHash, cancellationToken);
+        if (session.ExpectedExpiresAt <= clock.GetUtcNow())
+        {
+            throw new InvalidOperationException("An expired authentication session cannot be published.");
+        }
         var ledger = new AuthenticationSessionLedger
         {
             PrincipalId = session.Principal.Id,
@@ -49,6 +55,7 @@ public sealed class SessionLedgerWriter(PamDbContext dbContext) : ISessionLedger
         dbContext.AuditEvents.Add(auditEvent);
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task RecordRenewedAsync(
