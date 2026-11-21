@@ -50,7 +50,7 @@ See [PostgreSQL template databases](https://www.postgresql.org/docs/18/manage-ag
 
 On 2026-11-21/22, a matched Release/no-build/no-restore benchmark of 193 existing
 cases (principal enable/role assignment, eligibility/authority assignment,
-bootstrap handover and resource update) passed in both configurations:
+bootstrap handover and resource update) passed in all three configurations:
 
 | Configuration | Process wall time | Peak overlapping test cases |
 | --- | ---: | ---: |
@@ -62,6 +62,17 @@ Each figure is one local run with cached Docker images; fixture startup and the
 same TRX logging are included. This measures that subset on this machine, rather
 than promising a fixed CI speedup. TRX results confirmed the same 193 cases passed
 and that execution actually overlapped. See [xUnit collection scheduling](https://xunit.net/docs/running-tests-in-parallel).
+
+The complete `bash scripts/check.sh` gate passed on 2026-11-22 at `c590a57`:
+227 unit and 1,023 integration cases, zero failed/skipped and a Release build with
+zero warnings/errors. Integration execution took 1 minute 26 seconds; the entire
+gate, including restore/format/build checks, took 111 seconds. These are local
+observations, not a CI time limit.
+
+`PostgresFixtureTests.CreateDatabase_ConcurrentCalls_ReturnIndependentMigratedDatabases`
+checks concurrent cloning, current migration history and independent persisted
+rows. `CreateDatabase_ModifiedClone_DoesNotLeakDataOrSchemaIntoLaterClone` checks
+that neither inserted data nor a test-added SQL constraint reaches a later clone.
 
 ## Seven test conventions
 
