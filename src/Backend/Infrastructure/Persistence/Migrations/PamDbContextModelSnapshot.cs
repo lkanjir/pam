@@ -222,8 +222,9 @@ namespace Infrastructure.Persistence.Migrations
                     b.HasIndex("ResourceId")
                         .HasDatabaseName("ix_audit_events_resource_id");
 
-                    b.HasIndex("SubjectPrincipalId")
-                        .HasDatabaseName("ix_audit_events_subject_principal_id");
+                    b.HasIndex("SubjectPrincipalId", "Id")
+                        .HasDatabaseName("ix_audit_events_last_account_disable")
+                        .HasFilter("event_type = 'principal.disabled'");
 
                     b.ToTable("audit_events", (string)null);
                 });

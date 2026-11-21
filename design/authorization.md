@@ -1,9 +1,11 @@
 # PAM authorization design and delivery plan
 
-Updated: **2026-11-20**. Status: **implementation plan**, not implemented behavior.
+Updated: **2026-11-21**. Status: **implementation in progress**, not a completed delivery.
 This is the shared, versioned authorization contract. Existing local planning
 material in `docs/` links here; this file does not depend on ignored documents.
-The current source baseline is `feature/resource-crud`, commit `245266a`.
+The implementation branch is `codex/fine-grained-authorization`, based on local
+`feature/resource-crud` commit `10f567c`. Completed slices are recorded in Git;
+remaining items below are a delivery contract, not claims of implemented behavior.
 
 ## 1. Goal, decisions and delivery boundary
 
@@ -189,6 +191,25 @@ copied into long-lived tickets. A role change revokes the stale PAM session on i
 next authentication attempt. A scope change applies on the next authorization
 check without requiring a fresh login. DB/Redis outages fail closed with the
 existing safe error contract; the session ledger never authenticates requests.
+
+Privilege restoration must not revive a retained PAM cookie. Before enabling an
+account, or adding an effective role, revoke its previously published sessions
+through the existing Redis end-intent/CAS mechanism. Keep the principal exclusively
+locked while selecting published ledger rows and revoking their tickets: the
+ledger/audit foreign keys serialize concurrent publication against that row lock.
+The ledger identifies issued sessions for cleanup; a Redis ticket remains required
+for authentication. No new security-version claim or authorization cache is added.
+
+Cleanup is bounded (initially 200 session rows per command). If another batch or a
+lost CAS race remains, return a safe `session_cleanup_pending` conflict without
+restoring privileges. Completed revocations remain safe progress if the later DB
+mutation/audit fails. Existing reconciliation acknowledges retained end intents
+and proactively closes disabled accounts' live sessions. Use the latest atomic
+`principal.disabled` audit time when known; externally disabled accounts without
+that record use detection time. Expired/lost-ticket handling retains its existing
+reason/time rules. Effective role removal remains immediate in the DB; a later
+role regrant must cross the cleanup barrier. A desired-state no-op must not revoke
+new sessions or duplicate a change audit.
 
 Extension rule: add a catalog capability only with its feature, define scoped
 predicates/invariants, expose an operation policy and add positive/negative/race

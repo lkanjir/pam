@@ -43,10 +43,15 @@ public sealed class SessionReconciler(
             return new();
         }
 
-        var sessions = await database.AuthenticationSessionLedgers
-            .Where(item => item.EndedAt == null && item.Id > position.AfterId && item.Id <= ceiling)
-            .OrderBy(item => item.Id).Take(limit)
-            .Select(item => new OpenSession(item.Id, item.SessionIdHash)).ToListAsync(cancellationToken);
+        var sessions = await (from item in database.AuthenticationSessionLedgers
+                              join principal in database.Principals on item.PrincipalId equals principal.Id
+                              where item.EndedAt == null && item.Id > position.AfterId && item.Id <= ceiling
+                              orderby item.Id
+                              select new OpenSession(item.Id, item.SessionIdHash, item.CreatedAt, principal.IsEnabled,
+                                  principal.IsEnabled ? null : database.AuditEvents
+                                      .Where(audit => audit.SubjectPrincipalId == principal.Id && audit.EventType == "principal.disabled")
+                                      .OrderByDescending(audit => audit.Id).Select(audit => (DateTime?)audit.OccurredAt).FirstOrDefault()))
+            .Take(limit).ToListAsync(cancellationToken);
         string correlation = "session-reconciliation-" + Guid.CreateVersion7(timeProvider.GetUtcNow()).ToString("N");
         foreach (var session in sessions)
         {
@@ -62,6 +67,19 @@ public sealed class SessionReconciler(
             var now = timeProvider.GetUtcNow();
             if (observed.HasTicket && observed.TicketExpiresAt is { } expiry && expiry > now)
             {
+                if (!session.PrincipalEnabled)
+                {
+                    var disabledAt = session.DisabledAt is { } recorded ? new DateTimeOffset(recorded, TimeSpan.Zero) : now;
+                    var createdAt = new DateTimeOffset(session.CreatedAt, TimeSpan.Zero);
+                    var disabledIntent = new PendingSessionEnd(session.Hash, disabledAt < createdAt ? createdAt : disabledAt,
+                        SessionEndReason.AccessChanged.ToCode(), correlation, expiry);
+                    var disabledCompletion = await tickets.EndAsync(disabledIntent, observed);
+                    if (disabledCompletion is not null)
+                    {
+                        await TryCompleteAsync(disabledCompletion, cancellationToken);
+                    }
+                    continue;
+                }
                 await ledger.RecordRenewedAsync(session.Hash, expiry, cancellationToken);
                 continue;
             }
@@ -108,5 +126,5 @@ public sealed class SessionReconciler(
         }
     }
 
-    private sealed record OpenSession(long Id, string Hash);
+    private sealed record OpenSession(long Id, string Hash, DateTime CreatedAt, bool PrincipalEnabled, DateTime? DisabledAt);
 }
