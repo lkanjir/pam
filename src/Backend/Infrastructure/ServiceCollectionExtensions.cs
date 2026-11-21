@@ -105,6 +105,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPrincipalAdministrationService, PrincipalAdministrationService>();
         services.AddScoped<IPrincipalRoleService, PrincipalRoleService>();
         services.AddScoped<IResourceAccessService, ResourceAccessService>();
+        services.AddScoped<IApprovalAuthorityService, ResourceAccessService>();
         services.AddScoped<IEligibilityService, EligibilityService>();
         services.AddScoped<IAccessRequestService, AccessRequestService>();
 

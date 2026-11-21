@@ -11,26 +11,33 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Principals;
 
-public sealed class ResourceAccessService(PamDbContext database, TimeProvider clock) : IResourceAccessService
+public sealed class ResourceAccessService(PamDbContext database, TimeProvider clock) : IResourceAccessService, IApprovalAuthorityService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public Task<ResourceAccessWriteResult> AssignAsync(Guid principalId, Guid resourceId, ChangeResourceAccessRequest request,
         AdministrativeActor actor, uint expectedVersion, string correlationId, CancellationToken cancellationToken = default) =>
-        SetAssignedAsync(principalId, resourceId, request, actor, expectedVersion, correlationId, true, cancellationToken);
+        SetAssignedAsync(principalId, resourceId, request, actor, expectedVersion, correlationId, ResourceBindingKind.ViewResource, true, cancellationToken);
 
     public Task<ResourceAccessWriteResult> RevokeAsync(Guid principalId, Guid resourceId, ChangeResourceAccessRequest request,
         AdministrativeActor actor, uint expectedVersion, string correlationId, CancellationToken cancellationToken = default) =>
-        SetAssignedAsync(principalId, resourceId, request, actor, expectedVersion, correlationId, false, cancellationToken);
+        SetAssignedAsync(principalId, resourceId, request, actor, expectedVersion, correlationId, ResourceBindingKind.ViewResource, false, cancellationToken);
+
+    Task<ResourceAccessWriteResult> IApprovalAuthorityService.AssignAsync(Guid principalId, Guid resourceId,
+        ChangeResourceAccessRequest request, AdministrativeActor actor, uint expectedVersion, string correlationId,
+        CancellationToken cancellationToken) =>
+        SetAssignedAsync(principalId, resourceId, request, actor, expectedVersion, correlationId, ResourceBindingKind.ApproveRequests, true, cancellationToken);
 
     private async Task<ResourceAccessWriteResult> SetAssignedAsync(Guid principalId, Guid resourceId, ChangeResourceAccessRequest request,
-        AdministrativeActor actor, uint expectedVersion, string correlationId, bool assigned, CancellationToken cancellationToken)
+        AdministrativeActor actor, uint expectedVersion, string correlationId, ResourceBindingKind kind, bool assigned,
+        CancellationToken cancellationToken)
     {
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         var principals = await database.Principals.FromSql(
             $"SELECT *, xmin FROM principals WHERE id = {actor.Principal.Id} OR public_id = {principalId} ORDER BY id FOR UPDATE")
             .AsNoTracking().ToListAsync(cancellationToken);
-        var decision = await AdministrativeAuthorization.CheckAsync(database, clock, actor, PamPermissions.ResourceAccessAssign, cancellationToken);
+        string permission = kind == ResourceBindingKind.ViewResource ? PamPermissions.ResourceAccessAssign : PamPermissions.ApprovalAuthorityAssign;
+        var decision = await AdministrativeAuthorization.CheckAsync(database, clock, actor, permission, cancellationToken);
         if (decision != AdministrativeDecision.Allowed)
         {
             return new(decision == AdministrativeDecision.Forbidden
@@ -40,6 +47,10 @@ public sealed class ResourceAccessService(PamDbContext database, TimeProvider cl
         if (target is null)
         {
             return new(PrincipalWriteKind.NotFound);
+        }
+        if (kind == ResourceBindingKind.ApproveRequests && target.Id == actor.Principal.Id)
+        {
+            return new(PrincipalWriteKind.SelfChangeForbidden);
         }
         if (!Validator.TryValidateObject(request, new ValidationContext(request), null, validateAllProperties: true))
         {
@@ -55,7 +66,7 @@ public sealed class ResourceAccessService(PamDbContext database, TimeProvider cl
         }
         if (assigned)
         {
-            var supportedRoles = PamPermissionRoles.For(PamPermissions.ResourcesReadScoped);
+            var supportedRoles = ResourceBindingRoles.For(kind);
             if (!await database.PamRoleAssignments.AnyAsync(assignment => assignment.PrincipalId == target.Id
                 && supportedRoles.Contains(assignment.Role.Code), cancellationToken))
             {
@@ -71,7 +82,7 @@ public sealed class ResourceAccessService(PamDbContext database, TimeProvider cl
         }
         var binding = await database.ResourcePrincipalBindings.IgnoreQueryFilters().AsNoTracking()
             .SingleOrDefaultAsync(value => value.PrincipalId == target.Id && value.ResourceId == resource.Id
-                && value.Kind == ResourceBindingKind.ViewResource, cancellationToken);
+                && value.Kind == kind, cancellationToken);
         if ((binding is { IsActive: true }) == assigned)
         {
             return new(PrincipalWriteKind.Succeeded, target.Version);
@@ -85,7 +96,7 @@ public sealed class ResourceAccessService(PamDbContext database, TimeProvider cl
                 PublicId = bindingId,
                 PrincipalId = target.Id,
                 ResourceId = resource.Id,
-                Kind = ResourceBindingKind.ViewResource,
+                Kind = kind,
                 AssignedAt = now.UtcDateTime,
                 AssignedByPrincipalId = actor.Principal.Id,
                 ModifiedAt = now.UtcDateTime,
@@ -112,7 +123,8 @@ public sealed class ResourceAccessService(PamDbContext database, TimeProvider cl
         }
         database.AuditEvents.Add(new AuditEvent
         {
-            EventType = assigned ? "resource_access.granted" : "resource_access.revoked",
+            EventType = (kind == ResourceBindingKind.ViewResource ? "resource_access" : "approval_authority")
+                + (assigned ? ".granted" : ".revoked"),
             SchemaVersion = 1,
             OccurredAt = now.UtcDateTime,
             ActorKind = "principal",
@@ -126,7 +138,9 @@ public sealed class ResourceAccessService(PamDbContext database, TimeProvider cl
             CorrelationId = correlationId,
             Source = "pam.api",
             Outcome = "success",
-            ReasonCode = assigned ? "visibility_granted" : "visibility_revoked"
+            ReasonCode = kind == ResourceBindingKind.ViewResource
+                ? assigned ? "visibility_granted" : "visibility_revoked"
+                : assigned ? "approval_authority_granted" : "approval_authority_revoked"
         });
         await database.SaveChangesAsync(cancellationToken);
         uint version = await database.Principals.Where(value => value.Id == target.Id).Select(value => value.Version).SingleAsync(cancellationToken);

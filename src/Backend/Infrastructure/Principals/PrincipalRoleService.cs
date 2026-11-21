@@ -107,11 +107,17 @@ public sealed class PrincipalRoleService(PamDbContext database, TimeProvider clo
             {
                 await DeactivateEligibilityAsync(target, actor, now, request.Reason.Trim(), correlationId, cancellationToken);
             }
-            var readRoles = PamPermissionRoles.For(PamPermissions.ResourcesReadScoped);
+            var readRoles = ResourceBindingRoles.For(ResourceBindingKind.ViewResource);
             if (readRoles.Contains(roleCode, StringComparer.Ordinal)
                 && !before.Roles.Any(code => code != roleCode && readRoles.Contains(code, StringComparer.Ordinal)))
             {
-                await DeactivateViewBindingsAsync(target, actor, now, request.Reason.Trim(), correlationId, cancellationToken);
+                await DeactivateResourceBindingsAsync(target, actor, now, request.Reason.Trim(), correlationId, ResourceBindingKind.ViewResource, cancellationToken);
+            }
+            var approvalRoles = ResourceBindingRoles.For(ResourceBindingKind.ApproveRequests);
+            if (approvalRoles.Contains(roleCode, StringComparer.Ordinal)
+                && !before.Roles.Any(code => code != roleCode && approvalRoles.Contains(code, StringComparer.Ordinal)))
+            {
+                await DeactivateResourceBindingsAsync(target, actor, now, request.Reason.Trim(), correlationId, ResourceBindingKind.ApproveRequests, cancellationToken);
             }
         }
         int changed = await database.Principals.Where(value => value.Id == target.Id && value.Version == expectedVersion)
@@ -168,23 +174,25 @@ public sealed class PrincipalRoleService(PamDbContext database, TimeProvider clo
             """, cancellationToken);
     }
 
-    private Task<int> DeactivateViewBindingsAsync(Principal target, AdministrativeActor actor, DateTimeOffset now,
-        string reason, string correlationId, CancellationToken cancellationToken)
+    private Task<int> DeactivateResourceBindingsAsync(Principal target, AdministrativeActor actor, DateTimeOffset now,
+        string reason, string correlationId, ResourceBindingKind kind, CancellationToken cancellationToken)
     {
         string actorSnapshot = JsonSerializer.Serialize(actor.Principal, JsonOptions);
         string subjectSnapshot = JsonSerializer.Serialize(new { target.PublicId, target.Issuer, target.Subject, target.DisplayName }, JsonOptions);
+        string eventType = kind == ResourceBindingKind.ViewResource ? "resource_access.deactivated" : "approval_authority.deactivated";
+        string storedKind = kind.ToString();
         return database.Database.ExecuteSqlAsync($"""
             WITH deactivated AS (
                 UPDATE resource_principal_bindings
                 SET is_active = FALSE, modified_at = {now.UtcDateTime}, modified_by_principal_id = {actor.Principal.Id}
-                WHERE principal_id = {target.Id} AND kind = 'ViewResource' AND is_active
+                WHERE principal_id = {target.Id} AND kind = {storedKind} AND is_active
                 RETURNING public_id, resource_id
             )
             INSERT INTO audit_events
                 (event_type, schema_version, occurred_at, actor_kind, actor_principal_id,
                  subject_principal_id, resource_id, actor_snapshot, subject_snapshot,
                  correlation_id, source, outcome, reason_code, metadata)
-            SELECT 'resource_access.deactivated', 1, {now.UtcDateTime}, 'principal', {actor.Principal.Id},
+            SELECT {eventType}, 1, {now.UtcDateTime}, 'principal', {actor.Principal.Id},
                 {target.Id}, d.resource_id, {actorSnapshot}::jsonb, {subjectSnapshot}::jsonb,
                 {correlationId}, 'pam.api', 'success', 'supporting_role_removed',
                 jsonb_build_object('bindingId', d.public_id, 'before', TRUE, 'after', FALSE,

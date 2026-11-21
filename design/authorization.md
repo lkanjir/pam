@@ -489,6 +489,18 @@ It atomically disables the rule with `eligibility.revoked` audit and a new ETag.
 Current-version absent/disabled retries are no-ops. It changes new policy outcomes,
 not view assignments, owner history/replay or previously issued target grants.
 
+Delivered approval-authority grant:
+`PUT /api/principals/{id}/approval-authority/{resourceId}` requires
+`approval_authority.assign`, recent-auth, reason and principal If-Match. It creates
+an explicit `ApproveRequests` relationship only for another enabled Approver,
+covering every current/future entitlement on that resource. Own changes are
+forbidden before desired-state no-op handling. Assignment/audit/principal ETag
+commit together; no role, requester view, eligibility, decision or target grant is
+created. Authority grants scoped resource context only with current Approver
+support. Requester queries/submissions still require an explicit ViewResource
+relationship, even for combined User/Approver accounts. Role removal deactivates
+unsupported authority atomically with exact per-relationship audit.
+
 ### Endpoint and operation matrix
 
 These are target contracts; new route names are proposed until their slice is

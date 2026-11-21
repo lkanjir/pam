@@ -9,7 +9,7 @@ public sealed class ResourcePrincipalBindingConfiguration : IEntityTypeConfigura
     public void Configure(EntityTypeBuilder<ResourcePrincipalBinding> builder)
     {
         builder.ToTable("resource_principal_bindings", table => table.HasCheckConstraint(
-            "ck_resource_principal_bindings_kind", "kind IN ('ViewResource')"));
+            "ck_resource_principal_bindings_kind", "kind IN ('ViewResource', 'ApproveRequests')"));
         builder.HasKey(binding => binding.Id);
         builder.Property(binding => binding.Id).UseIdentityByDefaultColumn();
         builder.Property(binding => binding.PublicId).HasDefaultValueSql("uuidv7()");

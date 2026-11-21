@@ -60,6 +60,7 @@ public static class PamApplication
         api.MapPrincipalRoleEndpoints();
         api.MapResourceAccessEndpoints();
         api.MapEligibilityEndpoints();
+        api.MapApprovalAuthorityEndpoints();
 
         if (app.Environment.IsDevelopment())
         {

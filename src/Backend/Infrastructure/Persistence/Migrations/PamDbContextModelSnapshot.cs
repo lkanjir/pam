@@ -821,7 +821,7 @@ namespace Infrastructure.Persistence.Migrations
 
                     b.ToTable("resource_principal_bindings", null, t =>
                         {
-                            t.HasCheckConstraint("ck_resource_principal_bindings_kind", "kind IN ('ViewResource')");
+                            t.HasCheckConstraint("ck_resource_principal_bindings_kind", "kind IN ('ViewResource', 'ApproveRequests')");
                         });
                 });
 

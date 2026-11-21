@@ -31,7 +31,7 @@ public static class ResourceEndpoints
         resources.MapGet("/visible", ListVisible)
             .WithName("Resource.ListVisible")
             .WithSummary("List resources in the caller's explicit visibility scope")
-            .WithDescription("Requires resources.read_scoped. Filters current active view bindings before ascending public-ID pagination. "
+            .WithDescription("Requires resources.read_scoped. Filters current active view bindings or matching Approver authority before ascending public-ID pagination. "
                 + "Includes inactive resources with a view assignment, excludes retired resources and returns no entitlement eligibility or other users' assignments. "
                 + "A view does not grant target access. Limit defaults to 20, range 1–100. Administrative read_all does not imply this requester/approver scope.")
             .RequireAuthorization(PamPermissions.ResourcesReadScoped)
@@ -52,7 +52,7 @@ public static class ResourceEndpoints
         resources.MapGet("/{id:guid}", GetById).WithName(GetByIdRouteName)
             .WithMetadata(new PamConditionalPermissionMetadata(PamPermissions.ResourcesReadAll, PamPermissions.ResourcesReadScoped))
             .WithSummary("Read a resource through management or explicit scoped visibility")
-            .WithDescription("Requires resources.read_all, or resources.read_scoped with a current active view binding. "
+            .WithDescription("Requires resources.read_all, or resources.read_scoped with a current active view binding or matching Approver authority. "
                 + "Hidden, missing and retired resources are indistinguishable 404s for a scoped caller. "
                 + "Returns a strong resource ETag; visibility grants no write or target-access permission.")
             .ProducesProblem(StatusCodes.Status401Unauthorized)
