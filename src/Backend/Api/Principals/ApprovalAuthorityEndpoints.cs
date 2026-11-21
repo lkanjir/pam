@@ -44,6 +44,21 @@ public static class ApprovalAuthorityEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
+        endpoints.MapDelete("/principals/{id:guid}/approval-authority/{resourceId:guid}", Revoke).WithResourceVersion()
+            .WithTags("Approval authority")
+            .WithName("Principal.ApprovalAuthority.Revoke")
+            .WithSummary("Revoke another principal's approval authority for one resource")
+            .WithDescription("Requires approval_authority.assign, recent-auth, a JSON reason and the target principal aggregate's current ETag in If-Match. "
+                + "Own authority changes are always forbidden, including absent/inactive-state retries. Other disabled/roleless targets and retired resources may be cleaned up. "
+                + "Revocation removes approval-context resource visibility, independently of requester view/eligibility and already issued target grants. "
+                + "Returns 204 and ETag; a current-version absent/inactive assignment for another principal is a no-op.")
+            .RequireAuthorization(PamPermissions.ApprovalAuthorityAssign, PamPolicies.RecentAuthentication)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status412PreconditionFailed)
+            .ProducesProblem(StatusCodes.Status428PreconditionRequired);
         return endpoints;
     }
 
@@ -60,9 +75,19 @@ public static class ApprovalAuthorityEndpoints
         return TypedResults.Ok(result.Page);
     }
 
-    private static async Task<Results<NoContent, UnauthorizedHttpResult, ProblemHttpResult>> Assign(Guid id, Guid resourceId,
+    private static Task<Results<NoContent, UnauthorizedHttpResult, ProblemHttpResult>> Assign(Guid id, Guid resourceId,
         ChangeResourceAccessRequest request, [FromHeader(Name = "If-Match")] string? ifMatch, HttpContext context,
-        IApprovalAuthorityService service, CancellationToken cancellationToken)
+        IApprovalAuthorityService service, CancellationToken cancellationToken) =>
+        WriteAsync(id, resourceId, request, ifMatch, context, service, true, cancellationToken);
+
+    private static Task<Results<NoContent, UnauthorizedHttpResult, ProblemHttpResult>> Revoke(Guid id, Guid resourceId,
+        [FromBody] ChangeResourceAccessRequest request, [FromHeader(Name = "If-Match")] string? ifMatch, HttpContext context,
+        IApprovalAuthorityService service, CancellationToken cancellationToken) =>
+        WriteAsync(id, resourceId, request, ifMatch, context, service, false, cancellationToken);
+
+    private static async Task<Results<NoContent, UnauthorizedHttpResult, ProblemHttpResult>> WriteAsync(Guid id, Guid resourceId,
+        ChangeResourceAccessRequest request, string? ifMatch, HttpContext context, IApprovalAuthorityService service,
+        bool assigned, CancellationToken cancellationToken)
     {
         if (!PamClaims.TryRead(context.User, out var identity))
         {
@@ -73,8 +98,10 @@ public static class ApprovalAuthorityEndpoints
             return precondition;
         }
         var snapshot = new PrincipalSnapshot(identity.Id, identity.PublicId, identity.DisplayName, identity.Issuer, identity.Subject);
-        var result = await service.AssignAsync(id, resourceId, request,
-            new(snapshot, PamAuthenticationTime.Read(context.User)), version, context.TraceIdentifier, cancellationToken);
+        var actor = new AdministrativeActor(snapshot, PamAuthenticationTime.Read(context.User));
+        var result = assigned
+            ? await service.AssignAsync(id, resourceId, request, actor, version, context.TraceIdentifier, cancellationToken)
+            : await service.RevokeAsync(id, resourceId, request, actor, version, context.TraceIdentifier, cancellationToken);
         if (result.Kind != PrincipalWriteKind.Succeeded)
         {
             int status = result.Kind switch

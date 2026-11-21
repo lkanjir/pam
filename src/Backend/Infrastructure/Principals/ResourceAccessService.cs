@@ -28,6 +28,11 @@ public sealed class ResourceAccessService(PamDbContext database, TimeProvider cl
         CancellationToken cancellationToken) =>
         SetAssignedAsync(principalId, resourceId, request, actor, expectedVersion, correlationId, ResourceBindingKind.ApproveRequests, true, cancellationToken);
 
+    Task<ResourceAccessWriteResult> IApprovalAuthorityService.RevokeAsync(Guid principalId, Guid resourceId,
+        ChangeResourceAccessRequest request, AdministrativeActor actor, uint expectedVersion, string correlationId,
+        CancellationToken cancellationToken) =>
+        SetAssignedAsync(principalId, resourceId, request, actor, expectedVersion, correlationId, ResourceBindingKind.ApproveRequests, false, cancellationToken);
+
     private async Task<ResourceAccessWriteResult> SetAssignedAsync(Guid principalId, Guid resourceId, ChangeResourceAccessRequest request,
         AdministrativeActor actor, uint expectedVersion, string correlationId, ResourceBindingKind kind, bool assigned,
         CancellationToken cancellationToken)

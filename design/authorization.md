@@ -507,6 +507,14 @@ principal ETag from one SQL snapshot. Inactive authority, disabled principals an
 retired resources remain inspectable. View and authority reads select their exact
 relationship kind and never merge the two administrative collections.
 
+Delivered authority revocation:
+`DELETE /api/principals/{id}/approval-authority/{resourceId}` uses the same sensitive
+permission, JSON reason and principal ETag. Own authority changes remain forbidden,
+including absent/inactive no-ops. Other disabled/roleless targets and retired
+resources can be cleaned up. Authority/audit/ETag change atomically; independent
+view/eligibility and issued target grants remain separate. Successful revocation
+and current-version inactive retries return 204.
+
 ### Endpoint and operation matrix
 
 These are target contracts; new route names are proposed until their slice is
