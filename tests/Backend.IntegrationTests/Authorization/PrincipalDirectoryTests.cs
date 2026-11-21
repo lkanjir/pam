@@ -12,6 +12,42 @@ namespace Backend.IntegrationTests.Authorization;
 public sealed class PrincipalDirectoryTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]
+    [InlineData("admin", true, 200)]
+    [InlineData("admin", false, 404)]
+    [InlineData("user", true, 403)]
+    [InlineData("approver", true, 403)]
+    [InlineData("", true, 403)]
+    public async Task Get_ExplicitPermissionAndMappingExistence_ControlDisclosure(string role, bool exists, int status)
+    {
+        // Arrange
+        await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection,
+            roles: role.Length == 0 ? [] : [role]);
+        await test.AuthenticateAsync(includeResourceVersion: false, includeAuthenticationTime: false);
+        var expected = await test.Database.Context.Principals.SingleAsync(principal => principal.Subject == "ivan");
+
+        // Act
+        using var response = await test.Client.GetAsync($"/api/principals/{(exists ? expected.PublicId : Guid.NewGuid())}");
+
+        // Assert
+        Assert.Equal(status, (int)response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        if (status == 200)
+        {
+            var principal = await response.Content.ReadFromJsonAsync<PrincipalResponse>();
+            Assert.NotNull(principal);
+            Assert.Equal(expected.PublicId, principal.Id);
+            Assert.Equal("test-issuer", principal.Issuer);
+            Assert.Equal("ivan", principal.Subject);
+            Assert.False(principal.IsEnabled);
+        }
+        else
+        {
+            Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+            Assert.DoesNotContain("\"subject\"", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
     [InlineData("admin", 200)]
     [InlineData("admin,user", 200)]
     [InlineData("user", 403)]
