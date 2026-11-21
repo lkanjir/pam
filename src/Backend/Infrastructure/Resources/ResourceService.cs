@@ -223,6 +223,35 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
         return new(items, hasMore ? CursorCodec.Encode(new ResourceCursor(items[^1].Id)) : null);
     }
 
+    public async Task<CursorPage<ManagedEntitlementResponse>?> ListEntitlementsAsync(Guid resourceId, int limit,
+        EntitlementCursor? cursor, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, 100);
+        var entitlements = dbContext.Entitlements.AsNoTracking();
+        if (cursor is not null)
+        {
+            Guid lastId = cursor.LastPublicId;
+            entitlements = entitlements.Where(entitlement => entitlement.PublicId.CompareTo(lastId) > 0);
+        }
+        var items = await dbContext.ManagedResources.AsNoTracking().AsSingleQuery().Where(resource => resource.PublicId == resourceId)
+            .Select(resource => entitlements.Where(entitlement => entitlement.ResourceId == resource.Id)
+                .OrderBy(entitlement => entitlement.PublicId).Take(limit + 1)
+                .Select(entitlement => new ManagedEntitlementResponse(entitlement.PublicId, entitlement.Code, entitlement.Name,
+                    entitlement.MaxDurationMinutes, entitlement.RequiresApproval, entitlement.RequiresTicket, entitlement.IsActive)).ToList())
+            .SingleOrDefaultAsync(cancellationToken);
+        if (items is null)
+        {
+            return null;
+        }
+        bool hasMore = items.Count > limit;
+        if (hasMore)
+        {
+            items.RemoveAt(limit);
+        }
+        return new(items, hasMore ? CursorCodec.Encode(new EntitlementCursor(items[^1].Id)) : null);
+    }
+
     public async Task<CursorPage<ResourceResponse>> ListRequestableAsync(
         long principalId,
         int limit,

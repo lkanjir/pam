@@ -38,6 +38,17 @@ public static class ResourceEndpoints
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden);
+        resources.MapGet("/{id:guid}/entitlements", ListEntitlements)
+            .WithName("Resource.Entitlements.List")
+            .WithSummary("Inspect the configured entitlements of a managed resource")
+            .WithDescription("Requires resources.read_all for resource configuration. Includes inactive entitlements regardless of caller eligibility, "
+                + "with no access grant or eligibility change. Inactive resources remain inspectable; retired/missing resources return 404. "
+                + "Uses ascending entitlement public-ID pagination; limit defaults to 20, range 1–100.")
+            .RequireAuthorization(PamPermissions.ResourcesReadAll)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
         resources.MapGet("/{id:guid}", GetById).WithName(GetByIdRouteName)
             .WithMetadata(new PamConditionalPermissionMetadata(PamPermissions.ResourcesReadAll, PamPermissions.ResourcesReadScoped))
             .WithSummary("Read a resource through management or explicit scoped visibility")
@@ -129,6 +140,13 @@ public static class ResourceEndpoints
             return TypedResults.Unauthorized();
         }
         return TypedResults.Ok(await resourceService.ListVisibleAsync(identity.Id, query.Limit, query.Cursor, cancellationToken));
+    }
+
+    private static async Task<Results<Ok<CursorPage<ManagedEntitlementResponse>>, NotFound>> ListEntitlements(Guid id,
+        [AsParameters] EntitlementListQuery query, IResourceService resourceService, CancellationToken cancellationToken)
+    {
+        var page = await resourceService.ListEntitlementsAsync(id, query.Limit, query.Cursor, cancellationToken);
+        return page is null ? TypedResults.NotFound() : TypedResults.Ok(page);
     }
 
     private static async Task<Results<Ok<ResourceResponse>, NotFound, UnauthorizedHttpResult, ForbidHttpResult>> GetById(

@@ -37,6 +37,9 @@ public interface IResourceService
     Task<CursorPage<ResourceResponse>> ListVisibleAsync(long principalId, int limit, ResourceCursor? cursor,
         CancellationToken cancellationToken = default);
 
+    Task<CursorPage<ManagedEntitlementResponse>?> ListEntitlementsAsync(Guid resourceId, int limit, EntitlementCursor? cursor,
+        CancellationToken cancellationToken = default);
+
     Task<CursorPage<ResourceResponse>> ListRequestableAsync(
         long principalId,
         int limit,

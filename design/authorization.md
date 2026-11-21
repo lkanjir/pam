@@ -460,6 +460,13 @@ assigned inactive resources, excludes retired resources and returns no entitleme
 eligibility or other principals' assignments. ReadAll remains a separate management
 catalog; an Admin/User account receives no implicit scoped visibility.
 
+Delivered entitlement discovery for eligibility administration:
+`GET /api/resources/{id}/entitlements` uses `resources.read_all` to inspect resource
+configuration. It returns a bounded entitlement-ID page including inactive
+entitlements, without filtering by caller eligibility. Inactive resources remain
+inspectable; missing/retired parents return 404. This read creates no assignments
+and does not introduce entitlement-management writes.
+
 ### Endpoint and operation matrix
 
 These are target contracts; new route names are proposed until their slice is
