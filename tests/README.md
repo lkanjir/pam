@@ -221,8 +221,10 @@ source of truth; loading a current entity is optional and does not replace them.
 Resource endpoint tests use the production HTTP pipeline with real cookie sessions,
 antiforgery validation, PostgreSQL and Redis. A local test sign-in replaces the
 external identity provider, using the same infrastructure as the cookie tests.
-The actor has no special role and edits a target created by a different principal,
-matching the temporary policy that every authenticated user can manage all targets.
+Management fixtures explicitly assign the Admin bundle and a fresh original
+authentication time. The target can have a different creator; ownership grants no
+management capability. Authorization suites separately prove denial for ordinary,
+unknown and roleless accounts, and independent requester visibility/eligibility.
 
 PUT fully replaces editable fields and requires `IsActive` explicitly. An omitted
 description clears the previous value. Tests cover trimming, validation boundaries,
@@ -394,3 +396,28 @@ analyzers and the warning-free Release build. **113 unit and 291 integration tes
 passed**, with zero failures or skips. The EF model matches its latest migration.
 The reviewed migration-range SQL export contains the open-session partial index
 and migration history entries, with no duplicate physical xmin column.
+
+## Authorization baseline
+
+The suites under `Authorization/` exercise current DB identity/roles, native
+ASP.NET policies, recent original OIDC authentication, explicit resource view,
+requester eligibility and resource-level approval authority. Management permission
+does not imply requester scope or approval authority. Tests cover self-operation
+rules (including no-op retries), last-Admin races, retained/retired assignments,
+parent ETags, filtering before pagination and rollback of required audit failures.
+Actual approval decisions and grants remain Sprint 2 work.
+
+`BootstrapInstallerTests` runs the reviewed installer SQL against disposable
+PostgreSQL, including failed/concurrent installation. `BootstrapBoundaryTests` and
+`BootstrapHandoverTests` cover the restricted temporary identity, real cookie/CSRF
+pipeline, current authorization repeated in services, atomic retirement and old
+cookie rejection while its ticket is still retained. No test provisions a live
+Keycloak user or claims a manual browser handover.
+
+`AccessRequestPagingIndexTests` verifies the migrated ordered owner/cursor index
+path with planner hints on an empty disposable table; it is not a workload
+benchmark. `OrphanSessionLeaseTests` covers both publication orderings, expired
+unpublished lease cleanup without fabricated audit, preservation of published
+expiry and resumed native Redis scans across server cursor pages. Publication
+expiry is checked after a shared PostgreSQL transaction advisory lock, so a delayed
+publisher cannot create a ledger after expired orphan cleanup.

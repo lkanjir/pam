@@ -1,11 +1,12 @@
 # PAM authorization design and delivery plan
 
-Updated: **2026-11-21**. Status: **implementation in progress**, not a completed delivery.
+Updated: **2026-11-21**. Status: **backend baseline implemented and automated checks passed**.
+Live Keycloak/browser release smoke remains a separately recorded manual check.
 This is the shared, versioned authorization contract. Existing local planning
 material in `docs/` links here; this file does not depend on ignored documents.
 The implementation branch is `codex/fine-grained-authorization`, based on local
-`feature/resource-crud` commit `10f567c`. Completed slices are recorded in Git;
-remaining items below are a delivery contract, not claims of implemented behavior.
+`feature/resource-crud` commit `10f567c`. Implementation/test pairs are recorded in Git. Actual approval decisions remain
+Sprint 2 work; the baseline does not add a placeholder approval state transition.
 
 ## 1. Goal, decisions and delivery boundary
 
@@ -81,6 +82,7 @@ Initial catalog, expressed as stable codes rather than role checks in handlers:
 | `resource_access.read`, `resource_access.assign` | Admin | Explicit resource visibility assignments; own assignment allowed |
 | `eligibility.read`, `eligibility.assign` | Admin | Per-entitlement requester eligibility; own assignment allowed |
 | `approval_authority.read`, `approval_authority.assign` | Admin | Per-resource authority; own authority changes forbidden |
+| `bootstrap.read` | Admin, including pending bootstrap | Read installation state; never initializes it |
 | `bootstrap.complete` | Permanent Admin | Pending handover, matching real identity and recent-auth |
 | `approvals.read`, `approvals.decide` | Approver; activated with approval slices | Resource authority; decisions additionally prohibit self-approval |
 | `audit.read` | Admin; activated with audit-search slice | Explicit bounded operational audit API |
@@ -251,7 +253,7 @@ all requests or physical target sessions. Deterministic concurrent tests must
 exercise both orderings. Resource ETag preconditions remain in force.
 
 Last-Admin protection counts enabled, **non-bootstrap** principals with the Admin
-bundle, once handover is complete. Removing Admin, disabling a principal and
+bundle. The temporary identity never substitutes for a permanent Admin. Removing Admin, disabling a principal and
 handover all use the same guard and count rule. Two concurrent removals cannot
 both observe another usable Admin and leave zero. The bootstrap exception permits
 initialization only while a recorded installation handover is pending. It never
@@ -523,29 +525,42 @@ retain unavailable parents separately and do not claim effective access. Native
 ASP.NET link generation points to each bounded detail collection for pre-enable
 review. This read changes no grants.
 
+Delivered bootstrap: the controlled [installation runbook](bootstrap-installation.md)
+and reviewed `scripts/initialize-pam.sql` create the restricted temporary identity,
+initial explicit Admin assignment and singleton installation/audit atomically.
+`bootstrap.read` reports state without initializing it. A fresh permanent Admin
+completes the installation through the authenticated API with installation ETag,
+reason and CSRF protection. One transaction removes every bootstrap role, deactivates
+all its view/authority/eligibility rows with per-row audit, disables it and records
+completion. Current identity checks reject its old cookies before Redis cleanup.
+Completed retirement cannot be reversed by normal status/role/scope APIs, and
+manually enabling the retained principal does not make it authenticatable.
+
 ### Endpoint and operation matrix
 
-These are target contracts; new route names are proposed until their slice is
-implemented and documented in OpenAPI. Existing routes retain their URLs.
+The following baseline surfaces are implemented and documented through native
+Minimal API/OpenAPI metadata. The approval feature is explicitly future scope.
 
 | HTTP surface | Required permission/context |
 | --- | --- |
 | Existing login and framework OIDC callback | Explicit protocol/public classification; full framework validation |
 | `/api/me`, `/api/auth/antiforgery`, POST `/api/auth/logout` | Enabled authenticated PAM session; logout retains CSRF protection |
-| Planned reauthentication start | Current PAM session, protected flow binding and approved local return location |
+| GET `/api/auth/reauthenticate` | Current PAM session, protected flow binding and approved local return location |
 | GET `/api/resources` with omitted/false `requestable` | `resources.read_all` |
 | GET `/api/resources?requestable=true` | `requests.create` + `resources.read_scoped`; view and eligibility filtered in SQL |
-| Planned GET `/api/resources/visible` | `resources.read_scoped`; view/approval-context predicate before paging |
+| GET `/api/resources/visible` | `resources.read_scoped`; view/approval-context predicate before paging |
 | GET `/api/resources/{id}` | Management read OR authorized scoped resource read |
+| GET `/api/resources/{id}/entitlements` | `resources.read_all`; bounded management configuration, including inactive entries |
 | POST/PUT/DELETE `/api/resources` and `{id}` | `resources.manage` + recent-auth; existing PUT/DELETE If-Match remains required |
 | POST `/api/access-requests` | `requests.create`; new-command visibility and current policy, with stable owner replay |
 | GET `/api/access-requests/mine` and `/{id}` | `requests.read_own` + owner predicate, without Admin bypass |
-| Planned principal list/detail and mapping/status writes | `principals.read` / `principals.manage`; mutations require recent-auth and self/last-Admin rules |
-| Planned role-assignment reads/writes | `roles.read` / `roles.assign`; mutations require recent-auth and self/last-Admin rules |
-| Planned view-assignment reads/writes | `resource_access.read` / `resource_access.assign`; mutations require recent-auth |
-| Planned eligibility reads/writes | `eligibility.read` / `eligibility.assign`; mutations require recent-auth and matching entitlement parent |
-| Planned approver-assignment reads/writes | `approval_authority.read` / `approval_authority.assign`; mutations require recent-auth and no self-authority changes |
-| Planned POST bootstrap completion | `bootstrap.complete`, pending installation, permanent caller and recent-auth |
+| Principal list/detail and mapping/status writes | `principals.read` / `principals.manage`; mutations require recent-auth and self/last-Admin rules |
+| Role-assignment reads/writes | `roles.read` / `roles.assign`; mutations require recent-auth and self/last-Admin rules |
+| View-assignment reads/writes | `resource_access.read` / `resource_access.assign`; mutations require recent-auth |
+| Eligibility reads/writes | `eligibility.read` / `eligibility.assign`; mutations require recent-auth and matching entitlement parent |
+| Approver-assignment reads/writes | `approval_authority.read` / `approval_authority.assign`; mutations require recent-auth and no self-authority changes |
+| GET `/api/authorization/bootstrap` | `bootstrap.read`; installation ETag, no initialization side effect |
+| POST `/api/authorization/bootstrap/complete` | `bootstrap.complete`, pending installation, permanent caller and recent-auth |
 | Future approval queue/detail/decision | `approvals.read` / `approvals.decide` + resource authority; decision also applies no-self-approval and current state |
 
 An administration response must provide a concurrency token for the aggregate its
@@ -559,7 +574,9 @@ or its change audit. Mapping creation uses the existing unique issuer/sub invari
 
 ## 9. Vertical-slice implementation sequence
 
-Each numbered item is delivered through adjacent working implementation and focused
+Items 1–9 and the two retained follow-ups are implemented. Final automated and
+manual release evidence is tracked separately below. Each item was delivered
+through adjacent working implementation and focused
 test commits. If a row names more than one write operation, split it into separate
 pairs; do not implement a whole interface/service layer before its first behavior.
 Update existing fixtures in implementation commits when required to preserve tests.
@@ -614,8 +631,10 @@ Update existing fixtures in implementation commits when required to preserve tes
     gate does not substitute for validating its new state transitions.
 
 Permission constants, methods, DTO fields and migrations appear only with the slice
-that uses them. Resource history paging index and orphan session-lease cleanup
-remain separate existing follow-ups; this plan does not claim they are complete.
+that uses them. The requester/public-ID paging index and bounded orphan session-lease cleanup
+are implemented. Cleanup uses native Redis scanning, conditional deletion and a
+PostgreSQL publication lock shared with expiry-checked ledger creation. It never
+deletes published recovery metadata or fabricates an audit for an unissued ticket.
 Production schema changes are exported as reviewed SQL for manual admin application;
 no production migrator, permission SQL bundle or live DB migration is introduced.
 
@@ -637,11 +656,14 @@ no production migrator, permission SQL bundle or live DB migration is introduced
 | Query/storage | Real PostgreSQL/Redis; filters before paging, bounded lists, cancellation, appropriate indexes and no overlapping DbContext operations |
 | HTTP/frontend | Actual cookie/CSRF pipeline, documented 401/403/404/409/412/428, generated OpenAPI, navigation hints never replace backend checks |
 
-No tests were run to validate this design document. Implementation acceptance uses
-`bash scripts/format.sh`, `bash scripts/check.sh`, focused tests per commit pair,
-and the separately recorded live OIDC smoke. Never present planned test cases as
-already passing. Existing baseline remains 113 unit + 291 integration tests from
-2026-11-15, not a new run on this document's update date.
+Automated acceptance uses `bash scripts/format.sh`, `bash scripts/check.sh` and
+focused real PostgreSQL/Redis tests per implementation/test pair. Test names and
+the final clean gate are recorded in [verification evidence](authorization-verification.md).
+Protocol tests exercise the actual framework OIDC callback with a local signed
+identity-provider test double. A live Keycloak/browser smoke for account switching,
+reauthentication and operator handover remains a manual release check; it is not
+claimed by the automated suite. Production SQL is exported for review only and
+has not been applied to a live database.
 
 ## 11. Decision closure and references
 
@@ -650,14 +672,13 @@ individual assignments first, resource-level approval scope, global self-approva
 ban, separate visibility/eligibility, own-view/eligibility exception, and a temporary
 Keycloak-authenticated bootstrap account retired after permanent handover.
 
-Implementation defaults proposed here: code-defined permission/bundle catalog,
+Implemented technical choices: code-defined permission/bundle catalog,
 startup endpoint inventory validation, the shared parent-row locking protocol,
 60-second future clock-skew tolerance, stable safe conflict codes and explicit
-single-assignment APIs. These are bounded technical choices, not user-approved
-claims of existing functionality. Exact DTO names/routes are finalized per slice
-while preserving the contracts above. Future custom roles, groups, MFA strength,
+single-assignment APIs. Final DTOs and routes are documented in generated OpenAPI
+and exercised through the production HTTP pipeline. Future custom roles, groups, MFA strength,
 auto-approval, audit retention and grant/connector semantics remain explicit feature
-work; they are not prerequisites for starting the existing-API authorization slices.
+work; they do not require changing the completed baseline's operation names.
 
 - [ASP.NET Core policy authorization](https://learn.microsoft.com/en-us/aspnet/core/security/authorization/policies?view=aspnetcore-10.0)
 - [ASP.NET Core resource authorization](https://learn.microsoft.com/en-us/aspnet/core/security/authorization/resource-based?view=aspnetcore-10.0)
