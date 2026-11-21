@@ -6,6 +6,7 @@ using Application.Common.Pagination;
 using Application.Principals;
 using Application.Sessions;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Api.Principals;
 
@@ -48,6 +49,22 @@ public static class PrincipalEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status409Conflict);
+        endpoints.MapPost("/principals/{id:guid}/disable", Disable).WithResourceVersion()
+            .WithTags("Principals")
+            .WithName("Principal.Disable")
+            .WithSummary("Disable another PAM account")
+            .WithDescription("Requires principals.manage, recent-auth, a reason and the target principal's current strong ETag in If-Match. "
+                + "Self changes and removal of the last enabled Admin are forbidden. Role and resource assignments remain for explicit re-enablement. "
+                + "Repeated disabled state with a current version makes no second audit; stale versions return 412. "
+                + "The account is disabled atomically with its audit, and retained sessions fail their next current-identity validation.")
+            .RequireAuthorization(PamPermissions.PrincipalsManage, PamPolicies.RecentAuthentication)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status412PreconditionFailed)
+            .ProducesProblem(StatusCodes.Status428PreconditionRequired);
         return endpoints;
     }
 
@@ -90,5 +107,50 @@ public static class PrincipalEndpoints
         }
         var principal = result.Principal ?? throw new InvalidOperationException("Mapping returned no principal.");
         return TypedResults.CreatedAtRoute(principal, GetByIdRouteName, new { id = principal.Id });
+    }
+
+    private static async Task<Results<Ok<PrincipalResponse>, UnauthorizedHttpResult, ProblemHttpResult>> Disable(Guid id,
+        ChangePrincipalStatusRequest request, [FromHeader(Name = "If-Match")] string? ifMatch, HttpContext context,
+        IPrincipalAdministrationService service, CancellationToken cancellationToken)
+    {
+        if (!PamClaims.TryRead(context.User, out var identity))
+        {
+            return TypedResults.Unauthorized();
+        }
+        if (ResourceEtags.RequireVersion(context.Request, ifMatch, out uint version) is { } precondition)
+        {
+            return precondition;
+        }
+        var snapshot = new PrincipalSnapshot(identity.Id, identity.PublicId, identity.DisplayName, identity.Issuer, identity.Subject);
+        var result = await service.DisableAsync(id, request, new AdministrativeActor(snapshot, PamAuthenticationTime.Read(context.User)),
+            version, context.TraceIdentifier, cancellationToken);
+        if (result.Kind != PrincipalWriteKind.Succeeded)
+        {
+            return StatusProblem(result.Kind);
+        }
+        var principal = result.Principal ?? throw new InvalidOperationException("Disable returned no principal.");
+        context.Response.Headers.ETag = ResourceEtags.Format(principal.Version);
+        return TypedResults.Ok(principal);
+    }
+
+    private static ProblemHttpResult StatusProblem(PrincipalWriteKind kind)
+    {
+        int status = kind switch
+        {
+            PrincipalWriteKind.NotFound => StatusCodes.Status404NotFound,
+            PrincipalWriteKind.PreconditionFailed => StatusCodes.Status412PreconditionFailed,
+            PrincipalWriteKind.LastAdmin => StatusCodes.Status409Conflict,
+            PrincipalWriteKind.InvalidRequest => StatusCodes.Status400BadRequest,
+            _ => StatusCodes.Status403Forbidden
+        };
+        string? code = kind switch
+        {
+            PrincipalWriteKind.RecentAuthenticationRequired => "recent_auth_required",
+            PrincipalWriteKind.SelfChangeForbidden => "self_change_forbidden",
+            PrincipalWriteKind.LastAdmin => "last_admin",
+            _ => null
+        };
+        return TypedResults.Problem(statusCode: status,
+            extensions: code is null ? null : new Dictionary<string, object?> { ["code"] = code });
     }
 }

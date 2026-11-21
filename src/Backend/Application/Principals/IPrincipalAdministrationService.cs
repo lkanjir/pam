@@ -9,4 +9,6 @@ public interface IPrincipalAdministrationService
     Task<PrincipalResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<PrincipalWriteResult> CreateAsync(CreatePrincipalRequest request, AdministrativeActor actor,
         string correlationId, CancellationToken cancellationToken = default);
+    Task<PrincipalWriteResult> DisableAsync(Guid id, ChangePrincipalStatusRequest request, AdministrativeActor actor,
+        uint expectedVersion, string correlationId, CancellationToken cancellationToken = default);
 }

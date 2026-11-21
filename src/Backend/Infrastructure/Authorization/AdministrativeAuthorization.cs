@@ -10,6 +10,12 @@ internal static class AdministrativeAuthorization
         await database.PamRoles.FromSql($"SELECT * FROM pam_roles WHERE code = {PamRoleCodes.Admin} FOR UPDATE")
             .AsNoTracking().Select(role => role.Id).SingleOrDefaultAsync(cancellationToken) != 0;
 
+    public static Task<bool> WouldRemoveLastAdminAsync(PamDbContext database, long targetId, CancellationToken cancellationToken) =>
+        database.PamRoleAssignments.AnyAsync(assignment => assignment.PrincipalId == targetId
+            && assignment.Principal.IsEnabled && assignment.Role.Code == PamRoleCodes.Admin
+            && !database.Principals.Any(principal => principal.Id != targetId && principal.IsEnabled
+                && principal.RoleAssignments.Any(role => role.Role.Code == PamRoleCodes.Admin)), cancellationToken);
+
     public static async Task<AdministrativeDecision> CheckAsync(PamDbContext database, TimeProvider clock,
         AdministrativeActor actor, string permission, CancellationToken cancellationToken)
     {
