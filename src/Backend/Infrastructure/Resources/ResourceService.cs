@@ -14,21 +14,19 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
 {
     private static readonly JsonSerializerOptions AuditJsonOptions = new(JsonSerializerDefaults.Web);
 
-    public Task<ResourceResponse?> GetByIdAsync(Guid publicId, CancellationToken cancellationToken = default)
-    {
-        return dbContext.ManagedResources.AsNoTracking().Where(resource => resource.PublicId == publicId)
-            .Select(resource => new ResourceResponse(
-                resource.PublicId,
-                resource.Name,
-                resource.Description,
-                resource.ResourceType,
-                resource.Environment,
-                resource.IsActive,
-                resource.CreatedAt,
-                resource.ModifiedAt)
-            { Version = resource.Version })
+    public Task<ResourceResponse?> GetByIdAsync(Guid publicId, CancellationToken cancellationToken = default) =>
+        Project(dbContext.ManagedResources.Where(resource => resource.PublicId == publicId))
             .SingleOrDefaultAsync(cancellationToken);
-    }
+
+    public Task<ResourceResponse?> GetScopedByIdAsync(Guid publicId, long principalId, CancellationToken cancellationToken = default) =>
+        Project(ResourceScopedAuthorization.VisibleResources(dbContext, principalId).Where(resource => resource.PublicId == publicId))
+            .SingleOrDefaultAsync(cancellationToken);
+
+    private static IQueryable<ResourceResponse> Project(IQueryable<ManagedResource> resources) =>
+        resources.AsNoTracking().Select(resource => new ResourceResponse(
+            resource.PublicId, resource.Name, resource.Description, resource.ResourceType, resource.Environment,
+            resource.IsActive, resource.CreatedAt, resource.ModifiedAt)
+        { Version = resource.Version });
 
     public async Task<ResourceWriteResult> CreateAsync(
         CreateResourceRequest request,
@@ -250,7 +248,7 @@ public sealed class ResourceService(PamDbContext dbContext, TimeProvider timePro
         var entitlements = dbContext.Entitlements.Where(entitlement => entitlement.IsActive
             && entitlement.EligibilityRules.Any(rule => rule.PrincipalId == principalId && rule.IsEnabled));
 
-        var resources = dbContext.ManagedResources.Where(resource => resource.IsActive
+        var resources = ResourceScopedAuthorization.RequesterResources(dbContext, principalId).Where(resource => resource.IsActive
             && entitlements.Any(entitlement => entitlement.ResourceId == resource.Id));
 
         if (cursor is not null)

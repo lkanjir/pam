@@ -24,6 +24,7 @@ public sealed class Principal
     public uint Version { get; private set; }
 
     public ICollection<PamRoleAssignment> RoleAssignments { get; } = new List<PamRoleAssignment>();
+    public ICollection<ResourcePrincipalBinding> ResourceBindings { get; } = new List<ResourcePrincipalBinding>();
     public ICollection<EligibilityRule> EligibilityRules { get; } = new List<EligibilityRule>();
     public ICollection<AccessRequest> AccessRequests { get; } = new List<AccessRequest>();
 }

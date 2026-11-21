@@ -20,19 +20,23 @@ public static class ResourceEndpoints
 
         resources.MapGet("", List)
             .WithName("Resource.List")
-            .WithMetadata(new PamConditionalPermissionMetadata(PamPermissions.ResourcesReadAll, PamPermissions.RequestsCreate))
+            .WithMetadata(new PamConditionalPermissionMetadata(PamPermissions.ResourcesReadAll, PamPermissions.RequestsCreate, PamPermissions.ResourcesReadScoped))
             .WithSummary("List managed resources or the caller's requestable resources")
             .WithDescription("Set requestable=true to include only active resources with active entitlements "
-                + "enabled for the current user. Each item then includes the available entitlements and their "
-                + "duration, approval and ticket requirements. The management list requires resources.read_all; requestable=true requires requests.create. "
+                + "enabled for the current user with an explicit active view binding. Each item then includes the available entitlements and their "
+                + "duration, approval and ticket requirements. The management list requires resources.read_all; requestable=true requires requests.create and resources.read_scoped. "
                 + "Uses limit and cursor pagination.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status400BadRequest);
         resources.MapGet("/{id:guid}", GetById).WithName(GetByIdRouteName)
-            .RequireAuthorization(PamPermissions.ResourcesReadAll)
-            .WithSummary("Read a managed resource")
-            .WithDescription("Requires resources.read_all. Returns a strong ETag identifying the resource version for conditional updates.")
-            .ProducesProblem(StatusCodes.Status403Forbidden);
+            .WithMetadata(new PamConditionalPermissionMetadata(PamPermissions.ResourcesReadAll, PamPermissions.ResourcesReadScoped))
+            .WithSummary("Read a resource through management or explicit scoped visibility")
+            .WithDescription("Requires resources.read_all, or resources.read_scoped with a current active view binding. "
+                + "Hidden, missing and retired resources are indistinguishable 404s for a scoped caller. "
+                + "Returns a strong resource ETag; visibility grants no write or target-access permission.")
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
         resources.MapPost("", Create).ProducesValidationProblem()
             .RequireAuthorization(PamPermissions.ResourcesManage, PamPolicies.RecentAuthentication)
             .WithName("Resource.Create")
@@ -73,7 +77,8 @@ public static class ResourceEndpoints
     {
         if (query.Requestable)
         {
-            if (!(await authorization.AuthorizeAsync(context.User, PamPermissions.RequestsCreate)).Succeeded)
+            if (!(await authorization.AuthorizeAsync(context.User, PamPermissions.RequestsCreate)).Succeeded
+                || !(await authorization.AuthorizeAsync(context.User, PamPermissions.ResourcesReadScoped)).Succeeded)
             {
                 return TypedResults.Forbid();
             }
@@ -105,13 +110,30 @@ public static class ResourceEndpoints
         return TypedResults.Ok(page);
     }
 
-    private static async Task<Results<Ok<ResourceResponse>, NotFound>> GetById(
+    private static async Task<Results<Ok<ResourceResponse>, NotFound, UnauthorizedHttpResult, ForbidHttpResult>> GetById(
         Guid id,
         HttpContext context,
         IResourceService resourceService,
+        IAuthorizationService authorization,
         CancellationToken cancellationToken)
     {
-        var resource = await resourceService.GetByIdAsync(id, cancellationToken);
+        ResourceResponse? resource;
+        if ((await authorization.AuthorizeAsync(context.User, PamPermissions.ResourcesReadAll)).Succeeded)
+        {
+            resource = await resourceService.GetByIdAsync(id, cancellationToken);
+        }
+        else
+        {
+            if (!(await authorization.AuthorizeAsync(context.User, PamPermissions.ResourcesReadScoped)).Succeeded)
+            {
+                return TypedResults.Forbid();
+            }
+            if (!PamClaims.TryRead(context.User, out var identity))
+            {
+                return TypedResults.Unauthorized();
+            }
+            resource = await resourceService.GetScopedByIdAsync(id, identity.Id, cancellationToken);
+        }
         if (resource is not null)
         {
             context.Response.Headers.ETag = ResourceEtags.Format(resource.Version);

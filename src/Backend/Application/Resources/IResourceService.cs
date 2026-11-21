@@ -6,6 +6,7 @@ namespace Application.Resources;
 public interface IResourceService
 {
     Task<ResourceResponse?> GetByIdAsync(Guid publicId, CancellationToken cancellationToken = default);
+    Task<ResourceResponse?> GetScopedByIdAsync(Guid publicId, long principalId, CancellationToken cancellationToken = default);
 
     Task<ResourceWriteResult> CreateAsync(
         CreateResourceRequest request,

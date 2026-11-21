@@ -266,6 +266,10 @@ public sealed class RequestableResourceTests(PostgresFixture postgres, RedisFixt
         long? principalId,
         bool eligibilityEnabled)
     {
+        if (principalId is not null)
+        {
+            test.AddViewBinding(resource, principalId);
+        }
         var entitlement = new Entitlement
         {
             PublicId = Guid.CreateVersion7(),

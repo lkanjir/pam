@@ -160,6 +160,8 @@ public sealed class AccessRequestIdempotencyTests(PostgresFixture postgres, Redi
         await test.Database.Context.Principals.Where(item => item.Id == other.Id)
             .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.IsEnabled, true));
         await SessionTestHost.AssignRolesAsync(test.Database, other.Id, "user");
+        test.AddViewBinding(test.Resource, other.Id);
+        await test.Database.Context.SaveChangesAsync();
         await using var server = await SessionTestHost.CreateSessionServerAsync(
             test.Database, test.Clock, other.Id.ToString(CultureInfo.InvariantCulture), redis.Connection);
         using var client = server.GetTestClient();

@@ -107,6 +107,12 @@ public sealed class PrincipalRoleService(PamDbContext database, TimeProvider clo
             {
                 await DeactivateEligibilityAsync(target, actor, now, request.Reason.Trim(), correlationId, cancellationToken);
             }
+            var readRoles = PamPermissionRoles.For(PamPermissions.ResourcesReadScoped);
+            if (readRoles.Contains(roleCode, StringComparer.Ordinal)
+                && !before.Roles.Any(code => code != roleCode && readRoles.Contains(code, StringComparer.Ordinal)))
+            {
+                await DeactivateViewBindingsAsync(target, actor, now, request.Reason.Trim(), correlationId, cancellationToken);
+            }
         }
         int changed = await database.Principals.Where(value => value.Id == target.Id && value.Version == expectedVersion)
             .ExecuteUpdateAsync(update => update.SetProperty(value => value.ModifiedAt, now.UtcDateTime), cancellationToken);
@@ -159,6 +165,31 @@ public sealed class PrincipalRoleService(PamDbContext database, TimeProvider clo
                 jsonb_build_object('eligibilityId', d.public_id, 'before', TRUE, 'after', FALSE,
                     'reason', {reason}::text)
             FROM deactivated d JOIN entitlements e ON e.id = d.entitlement_id
+            """, cancellationToken);
+    }
+
+    private Task<int> DeactivateViewBindingsAsync(Principal target, AdministrativeActor actor, DateTimeOffset now,
+        string reason, string correlationId, CancellationToken cancellationToken)
+    {
+        string actorSnapshot = JsonSerializer.Serialize(actor.Principal, JsonOptions);
+        string subjectSnapshot = JsonSerializer.Serialize(new { target.PublicId, target.Issuer, target.Subject, target.DisplayName }, JsonOptions);
+        return database.Database.ExecuteSqlAsync($"""
+            WITH deactivated AS (
+                UPDATE resource_principal_bindings
+                SET is_active = FALSE, modified_at = {now.UtcDateTime}, modified_by_principal_id = {actor.Principal.Id}
+                WHERE principal_id = {target.Id} AND kind = 'ViewResource' AND is_active
+                RETURNING public_id, resource_id
+            )
+            INSERT INTO audit_events
+                (event_type, schema_version, occurred_at, actor_kind, actor_principal_id,
+                 subject_principal_id, resource_id, actor_snapshot, subject_snapshot,
+                 correlation_id, source, outcome, reason_code, metadata)
+            SELECT 'resource_access.deactivated', 1, {now.UtcDateTime}, 'principal', {actor.Principal.Id},
+                {target.Id}, d.resource_id, {actorSnapshot}::jsonb, {subjectSnapshot}::jsonb,
+                {correlationId}, 'pam.api', 'success', 'supporting_role_removed',
+                jsonb_build_object('bindingId', d.public_id, 'before', TRUE, 'after', FALSE,
+                    'reason', {reason}::text)
+            FROM deactivated d
             """, cancellationToken);
     }
 

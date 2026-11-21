@@ -84,6 +84,29 @@ internal sealed class ResourceTestContext : IAsyncDisposable
             database, clock, long.Parse(principalId, CultureInfo.InvariantCulture), resource, application);
     }
 
+    public ResourcePrincipalBinding AddViewBinding(ManagedResource resource, long? principalId = null)
+    {
+        long targetId = principalId ?? ActorId;
+        var existing = resource.PrincipalBindings.SingleOrDefault(binding => binding.PrincipalId == targetId
+            && binding.Kind == ResourceBindingKind.ViewResource);
+        if (existing is not null)
+        {
+            return existing;
+        }
+        var binding = new ResourcePrincipalBinding
+        {
+            PrincipalId = targetId,
+            Resource = resource,
+            Kind = ResourceBindingKind.ViewResource,
+            AssignedByPrincipalId = ActorId,
+            ModifiedByPrincipalId = ActorId,
+            AssignedAt = Clock.Now.UtcDateTime,
+            ModifiedAt = Clock.Now.UtcDateTime
+        };
+        resource.PrincipalBindings.Add(binding);
+        return binding;
+    }
+
     public async Task AuthenticateAsync(bool includeResourceVersion = true, bool includeAuthenticationTime = true)
     {
         using var login = await Client.GetAsync(includeAuthenticationTime ? "/login" : "/login?without-auth-time");

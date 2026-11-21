@@ -3,6 +3,7 @@ using Application.AccessRequests;
 using Application.Authorization;
 using Application.Common.Pagination;
 using Application.Sessions;
+using Infrastructure.Authorization;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -122,12 +123,38 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
             return new(AccessRequestSubmissionKind.Forbidden);
         }
 
+        if (normalized.ResourceId == Guid.Empty || normalized.EntitlementId == Guid.Empty)
+        {
+            var errors = new Dictionary<string, string[]>();
+            if (normalized.ResourceId == Guid.Empty)
+            {
+                errors[nameof(request.ResourceId)] = ["Select a resource."];
+            }
+            if (normalized.EntitlementId == Guid.Empty)
+            {
+                errors[nameof(request.EntitlementId)] = ["Select an entitlement."];
+            }
+            return new(AccessRequestSubmissionKind.Invalid) { Errors = errors };
+        }
+
         var previous = await FindPreviousAsync(requester.Id, idempotencyKey, cancellationToken);
         if (previous is not null)
         {
             return AccessRequestFingerprint.IsMatch(previous.PayloadHash, payloadHash)
                 ? new(AccessRequestSubmissionKind.Replayed) { Request = previous.Response }
                 : new(AccessRequestSubmissionKind.Conflict);
+        }
+
+        // The principal lock fences scope/eligibility writers; the shared resource lock
+        // serializes retirement without upgrading a lock in the resource CRUD path.
+        var resource = await dbContext.ManagedResources.FromSql(
+            $"SELECT *, xmin FROM managed_resources WHERE public_id = {normalized.ResourceId} FOR SHARE")
+            .AsNoTracking().SingleOrDefaultAsync(cancellationToken);
+        if (resource is null || !resource.IsActive
+            || !await ResourceScopedAuthorization.RequesterResources(dbContext, requester.Id)
+                .AnyAsync(item => item.Id == resource.Id, cancellationToken))
+        {
+            return new(AccessRequestSubmissionKind.NotFound);
         }
 
         var entitlement = await dbContext.Entitlements

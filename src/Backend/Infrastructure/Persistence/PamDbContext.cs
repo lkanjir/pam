@@ -16,6 +16,7 @@ public class PamDbContext : DbContext
     public DbSet<ManagedResource> ManagedResources => Set<ManagedResource>();
     public DbSet<Entitlement> Entitlements => Set<Entitlement>();
     public DbSet<EligibilityRule> EligibilityRules => Set<EligibilityRule>();
+    public DbSet<ResourcePrincipalBinding> ResourcePrincipalBindings => Set<ResourcePrincipalBinding>();
     public DbSet<AccessRequest> AccessRequests => Set<AccessRequest>();
     public DbSet<PolicyEvaluation> PolicyEvaluations => Set<PolicyEvaluation>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();

@@ -38,6 +38,7 @@ internal static class AccessRequestTestData
         bool requiresApproval = true,
         long? principalId = null)
     {
+        test.AddViewBinding(test.Resource);
         var entitlement = new Entitlement
         {
             Resource = test.Resource,

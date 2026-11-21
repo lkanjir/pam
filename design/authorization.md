@@ -421,6 +421,17 @@ last requester capability, recording one `eligibility.deactivated` audit per exa
 relationship in SQL, and `role.removed` for the bundle. It does not wait on Redis.
 An absent-role retry is a no-op; granting User later leaves eligibility disabled.
 
+Delivered visibility enforcement uses a typed `ViewResource` relationship with
+unique `(principal, kind, resource)`, reverse index and xmin. It filters current
+enabled principals and explicit supporting bundles in SQL. Requestable queries
+also require User and current eligibility; management reads remain a separate
+alternative. Scoped details and new submissions return 404 for hidden resources.
+New submissions hold requester/resource locks through policy persistence; replay
+and owner history do not depend on current visibility. Losing the last supporting
+scoped-read bundle atomically deactivates view bindings with exact per-row audit.
+This schema migration grants no existing account visibility automatically. The
+administrative view-assignment endpoints and scoped catalog are subsequent slices.
+
 ### Endpoint and operation matrix
 
 These are target contracts; new route names are proposed until their slice is

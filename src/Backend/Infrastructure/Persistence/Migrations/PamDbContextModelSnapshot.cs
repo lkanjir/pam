@@ -742,6 +742,89 @@ namespace Infrastructure.Persistence.Migrations
                     b.ToTable("principals", (string)null);
                 });
 
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.ResourcePrincipalBinding", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("AssignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("assigned_at");
+
+                    b.Property<long>("AssignedByPrincipalId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("assigned_by_principal_id");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTime>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("modified_at");
+
+                    b.Property<long>("ModifiedByPrincipalId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("modified_by_principal_id");
+
+                    b.Property<long>("PrincipalId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("principal_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("uuidv7()");
+
+                    b.Property<long>("ResourceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("resource_id");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_resource_principal_bindings");
+
+                    b.HasIndex("AssignedByPrincipalId")
+                        .HasDatabaseName("ix_resource_principal_bindings_assigned_by_principal_id");
+
+                    b.HasIndex("ModifiedByPrincipalId")
+                        .HasDatabaseName("ix_resource_principal_bindings_modified_by_principal_id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_resource_principal_bindings_public_id");
+
+                    b.HasIndex("PrincipalId", "Kind", "ResourceId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_resource_principal_bindings_principal_id_kind_resource_id");
+
+                    b.HasIndex("ResourceId", "Kind", "PrincipalId")
+                        .HasDatabaseName("ix_resource_principal_bindings_resource_id_kind_principal_id");
+
+                    b.ToTable("resource_principal_bindings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_resource_principal_bindings_kind", "kind IN ('ViewResource')");
+                        });
+                });
+
             modelBuilder.Entity("Infrastructure.Persistence.Entities.AccessRequest", b =>
                 {
                     b.HasOne("Infrastructure.Persistence.Entities.Entitlement", "Entitlement")
@@ -918,6 +1001,45 @@ namespace Infrastructure.Persistence.Migrations
                     b.Navigation("Request");
                 });
 
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.ResourcePrincipalBinding", b =>
+                {
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "AssignedByPrincipal")
+                        .WithMany()
+                        .HasForeignKey("AssignedByPrincipalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_resource_principal_bindings_principals_assigned_by_principa");
+
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "ModifiedByPrincipal")
+                        .WithMany()
+                        .HasForeignKey("ModifiedByPrincipalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_resource_principal_bindings_principals_modified_by_principa");
+
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "Principal")
+                        .WithMany("ResourceBindings")
+                        .HasForeignKey("PrincipalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_resource_principal_bindings_principals_principal_id");
+
+                    b.HasOne("Infrastructure.Persistence.Entities.ManagedResource", "Resource")
+                        .WithMany("PrincipalBindings")
+                        .HasForeignKey("ResourceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_resource_principal_bindings_managed_resources_resource_id");
+
+                    b.Navigation("AssignedByPrincipal");
+
+                    b.Navigation("ModifiedByPrincipal");
+
+                    b.Navigation("Principal");
+
+                    b.Navigation("Resource");
+                });
+
             modelBuilder.Entity("Infrastructure.Persistence.Entities.Entitlement", b =>
                 {
                     b.Navigation("AccessRequests");
@@ -928,6 +1050,8 @@ namespace Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Infrastructure.Persistence.Entities.ManagedResource", b =>
                 {
                     b.Navigation("Entitlements");
+
+                    b.Navigation("PrincipalBindings");
                 });
 
             modelBuilder.Entity("Infrastructure.Persistence.Entities.PamRole", b =>
@@ -940,6 +1064,8 @@ namespace Infrastructure.Persistence.Migrations
                     b.Navigation("AccessRequests");
 
                     b.Navigation("EligibilityRules");
+
+                    b.Navigation("ResourceBindings");
 
                     b.Navigation("RoleAssignments");
                 });

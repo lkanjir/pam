@@ -15,11 +15,11 @@ public sealed class ResourceAuthorizationTests(PostgresFixture postgres, RedisFi
     [Theory]
     [InlineData("admin", 200)]
     [InlineData("admin,user", 200)]
-    [InlineData("user", 403)]
-    [InlineData("approver", 403)]
+    [InlineData("user", 404)]
+    [InlineData("approver", 404)]
     [InlineData("superadmin", 403)]
     [InlineData("", 403)]
-    public async Task Get_ManagementDetails_RequiresExplicitReadCapability(string roles, int status)
+    public async Task Get_Details_RequiresManagementPermissionOrScopedVisibility(string roles, int status)
     {
         // Arrange
         await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection,
