@@ -58,6 +58,7 @@ public static class PamApplication
         api.MapAccessRequestEndpoints();
         api.MapPrincipalEndpoints();
         api.MapPrincipalRoleEndpoints();
+        api.MapResourceAccessEndpoints();
 
         if (app.Environment.IsDevelopment())
         {

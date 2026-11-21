@@ -430,7 +430,13 @@ New submissions hold requester/resource locks through policy persistence; replay
 and owner history do not depend on current visibility. Losing the last supporting
 scoped-read bundle atomically deactivates view bindings with exact per-row audit.
 This schema migration grants no existing account visibility automatically. The
-administrative view-assignment endpoints and scoped catalog are subsequent slices.
+view-assignment writes and scoped catalog are subsequent slices.
+
+Delivered visibility administration read: `GET /api/principals/{id}/resource-access`
+requires `resource_access.read` and returns a bounded ascending resource-ID page,
+including inactive bindings and retired resources for disabled or enabled accounts.
+Its principal aggregate ETag and rows share one SQL snapshot. Read access does not
+change assignments or imply requester/approver capability.
 
 ### Endpoint and operation matrix
 
