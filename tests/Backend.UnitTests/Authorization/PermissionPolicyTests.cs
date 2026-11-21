@@ -17,6 +17,7 @@ public sealed class PermissionPolicyTests
     [InlineData(PamPermissions.ResourcesReadScoped, false)]
     [InlineData(PamPermissions.PrincipalsRead, false)]
     [InlineData(PamPermissions.RolesRead, false)]
+    [InlineData(PamPermissions.ResourceAccessRead, false)]
     [InlineData(PamPermissions.RequestsCreate, false)]
     [InlineData(PamPermissions.RequestsReadOwn, false)]
     public void AuthenticationAge_DeliveredOperations_HaveExplicitSensitivity(string permission, bool sensitive)
