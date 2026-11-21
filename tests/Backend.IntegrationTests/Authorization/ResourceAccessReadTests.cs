@@ -183,7 +183,7 @@ public sealed class ResourceAccessReadTests(PostgresFixture postgres, RedisFixtu
         await using var database = new PamDbContext(new DbContextOptionsBuilder<PamDbContext>()
             .UseNpgsql(test.Database.Context.Database.GetConnectionString(), options => options.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery))
             .UseSnakeCaseNamingConvention().AddInterceptors(counter).Options);
-        var service = new ResourceAccessService(database);
+        var service = new ResourceAccessService(database, test.Clock);
 
         // Act
         var result = await service.ListAsync(target.PublicId, 20, null);
