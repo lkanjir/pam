@@ -18,8 +18,61 @@ is a test setup failure, not a silent skip.
 Both projects are included in `src/Backend/Backend.sln`:
 
 ```sh
-dotnet test src/Backend/Backend.sln -m:1
+dotnet test src/Backend/Backend.sln
 ```
+
+## Parallel execution and storage isolation
+
+Integration tests use xUnit's native collection scheduling, capped at **four
+concurrent collections** through `CollectionBehavior(MaxParallelThreads = 4)`.
+The four `StorageCollection1`–`StorageCollection4` collections each own an
+independent PostgreSQL/Redis container pair. Tests inside a collection remain
+sequential, and each test still creates a separate PostgreSQL database. Standalone
+class fixtures also respect the assembly's concurrency cap. No runner/package
+change or custom scheduler is required.
+
+Assign new HTTP/storage test classes to one of these collections using
+`[Collection(StorageCollection1.Name)]` (or 2–4), spreading larger suites across
+them. Do not put all storage classes back into one collection: xUnit serializes
+classes in the same collection. Tests for custom migration environments retain
+their dedicated fixtures. Never share a mutable database/`DbContext` between
+parallel cases; explicit application concurrency tests use separate contexts
+inside one isolated case.
+
+PostgreSQL fixtures run the actual EF migrations once into a private template,
+close its connections and disable new connections to that source. Each test uses
+native `CREATE DATABASE ... TEMPLATE ...` to create a separate writable database,
+which is dropped after the test. Test-specific interceptors attach to the clone's
+context. Data, schema changes, locks and transactions stay isolated between tests.
+The dedicated development/production migration suites still start fresh databases
+and exercise migration/SQL application directly; they do not use the template.
+See [PostgreSQL template databases](https://www.postgresql.org/docs/18/manage-ag-templatedbs.html).
+
+On 2026-11-21/22, a matched Release/no-build/no-restore benchmark of 193 existing
+cases (principal enable/role assignment, eligibility/authority assignment,
+bootstrap handover and resource update) passed in all three configurations:
+
+| Configuration | Process wall time | Peak overlapping test cases |
+| --- | ---: | ---: |
+| Original single storage collection | 81.3 s | 1 |
+| Four bounded storage collections | 40.7 s | 4 |
+| Four collections with migrated-template clones | 30.3 s | 4 |
+
+Each figure is one local run with cached Docker images; fixture startup and the
+same TRX logging are included. This measures that subset on this machine, rather
+than promising a fixed CI speedup. TRX results confirmed the same 193 cases passed
+and that execution actually overlapped. See [xUnit collection scheduling](https://xunit.net/docs/running-tests-in-parallel).
+
+The complete `bash scripts/check.sh` gate passed on 2026-11-22 at `c590a57`:
+227 unit and 1,023 integration cases, zero failed/skipped and a Release build with
+zero warnings/errors. Integration execution took 1 minute 26 seconds; the entire
+gate, including restore/format/build checks, took 111 seconds. These are local
+observations, not a CI time limit.
+
+`PostgresFixtureTests.CreateDatabase_ConcurrentCalls_ReturnIndependentMigratedDatabases`
+checks concurrent cloning, current migration history and independent persisted
+rows. `CreateDatabase_ModifiedClone_DoesNotLeakDataOrSchemaIntoLaterClone` checks
+that neither inserted data nor a test-added SQL constraint reaches a later clone.
 
 ## Seven test conventions
 
@@ -45,7 +98,9 @@ dotnet test src/Backend/Backend.sln -m:1
 - FakeItEasy for external interfaces in unit tests; real in-process DI and Data
   Protection where useful. No custom proxy/mock framework.
 - Testcontainers PostgreSQL/Redis for storage integration tests.
-- Actual EF migrations (`MigrateAsync`), not `EnsureCreated` or an in-memory EF provider.
+- Actual EF migrations (`MigrateAsync`) build a protected template once per
+  PostgreSQL fixture; each test gets a fresh native database clone. No
+  `EnsureCreated`, transaction rollback substitute or in-memory EF provider.
 - A real ASP.NET cookie handler for successful sign-in and rejection on failed DB writes.
 
 Current coverage focuses on session creation, ledger/audit atomicity, cleanup on
@@ -221,8 +276,10 @@ source of truth; loading a current entity is optional and does not replace them.
 Resource endpoint tests use the production HTTP pipeline with real cookie sessions,
 antiforgery validation, PostgreSQL and Redis. A local test sign-in replaces the
 external identity provider, using the same infrastructure as the cookie tests.
-The actor has no special role and edits a target created by a different principal,
-matching the temporary policy that every authenticated user can manage all targets.
+Management fixtures explicitly assign the Admin bundle and a fresh original
+authentication time. The target can have a different creator; ownership grants no
+management capability. Authorization suites separately prove denial for ordinary,
+unknown and roleless accounts, and independent requester visibility/eligibility.
 
 PUT fully replaces editable fields and requires `IsActive` explicitly. An omitted
 description clears the previous value. Tests cover trimming, validation boundaries,
@@ -394,3 +451,28 @@ analyzers and the warning-free Release build. **113 unit and 291 integration tes
 passed**, with zero failures or skips. The EF model matches its latest migration.
 The reviewed migration-range SQL export contains the open-session partial index
 and migration history entries, with no duplicate physical xmin column.
+
+## Authorization baseline
+
+The suites under `Authorization/` exercise current DB identity/roles, native
+ASP.NET policies, recent original OIDC authentication, explicit resource view,
+requester eligibility and resource-level approval authority. Management permission
+does not imply requester scope or approval authority. Tests cover self-operation
+rules (including no-op retries), last-Admin races, retained/retired assignments,
+parent ETags, filtering before pagination and rollback of required audit failures.
+Actual approval decisions and grants remain Sprint 2 work.
+
+`BootstrapInstallerTests` runs the reviewed installer SQL against disposable
+PostgreSQL, including failed/concurrent installation. `BootstrapBoundaryTests` and
+`BootstrapHandoverTests` cover the restricted temporary identity, real cookie/CSRF
+pipeline, current authorization repeated in services, atomic retirement and old
+cookie rejection while its ticket is still retained. No test provisions a live
+Keycloak user or claims a manual browser handover.
+
+`AccessRequestPagingIndexTests` verifies the migrated ordered owner/cursor index
+path with planner hints on an empty disposable table; it is not a workload
+benchmark. `OrphanSessionLeaseTests` covers both publication orderings, expired
+unpublished lease cleanup without fabricated audit, preservation of published
+expiry and resumed native Redis scans across server cursor pages. Publication
+expiry is checked after a shared PostgreSQL transaction advisory lock, so a delayed
+publisher cannot create a ledger after expired orphan cleanup.

@@ -94,6 +94,9 @@ namespace Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_access_requests_requester_principal_id_idempotency_key");
 
+                    b.HasIndex("RequesterPrincipalId", "PublicId")
+                        .HasDatabaseName("ix_access_requests_requester_principal_id_public_id");
+
                     b.ToTable("access_requests", null, t =>
                         {
                             t.HasCheckConstraint("ck_access_requests_requested_duration_minutes", "requested_duration_minutes > 0");
@@ -222,8 +225,9 @@ namespace Infrastructure.Persistence.Migrations
                     b.HasIndex("ResourceId")
                         .HasDatabaseName("ix_audit_events_resource_id");
 
-                    b.HasIndex("SubjectPrincipalId")
-                        .HasDatabaseName("ix_audit_events_subject_principal_id");
+                    b.HasIndex("SubjectPrincipalId", "Id")
+                        .HasDatabaseName("ix_audit_events_last_account_disable")
+                        .HasFilter("event_type = 'principal.disabled'");
 
                     b.ToTable("audit_events", (string)null);
                 });
@@ -302,9 +306,6 @@ namespace Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_authentication_session_ledger_open_id")
                         .HasFilter("ended_at IS NULL");
 
-                    b.HasIndex("PrincipalId")
-                        .HasDatabaseName("ix_authentication_session_ledger_principal_id");
-
                     b.HasIndex("PublicId")
                         .IsUnique()
                         .HasDatabaseName("ix_authentication_session_ledger_public_id");
@@ -312,6 +313,10 @@ namespace Infrastructure.Persistence.Migrations
                     b.HasIndex("SessionIdHash")
                         .IsUnique()
                         .HasDatabaseName("ix_authentication_session_ledger_session_id_hash");
+
+                    b.HasIndex("PrincipalId", "Id")
+                        .HasDatabaseName("ix_authentication_session_ledger_open_principal_id")
+                        .HasFilter("ended_at IS NULL");
 
                     b.ToTable("authentication_session_ledger", (string)null);
                 });
@@ -512,6 +517,54 @@ namespace Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_managed_resources_public_id");
 
                     b.ToTable("managed_resources", (string)null);
+                });
+
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.PamInstallation", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    b.Property<long>("BootstrapPrincipalId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("bootstrap_principal_id");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<long?>("CompletedByPrincipalId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("completed_by_principal_id");
+
+                    b.Property<DateTime>("InitializedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("initialized_at");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pam_installation");
+
+                    b.HasIndex("BootstrapPrincipalId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_pam_installation_bootstrap_principal_id");
+
+                    b.HasIndex("CompletedByPrincipalId")
+                        .HasDatabaseName("ix_pam_installation_completed_by_principal_id");
+
+                    b.ToTable("pam_installation", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_pam_installation_completion", "(completed_at IS NULL) = (completed_by_principal_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_pam_installation_singleton", "id = 1");
+
+                            t.HasCheckConstraint("ck_pam_installation_time", "completed_at IS NULL OR completed_at >= initialized_at");
+                        });
                 });
 
             modelBuilder.Entity("Infrastructure.Persistence.Entities.PamRole", b =>
@@ -720,6 +773,12 @@ namespace Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("subject");
 
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id")
                         .HasName("pk_principals");
 
@@ -732,6 +791,89 @@ namespace Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_principals_issuer_subject");
 
                     b.ToTable("principals", (string)null);
+                });
+
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.ResourcePrincipalBinding", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("AssignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("assigned_at");
+
+                    b.Property<long>("AssignedByPrincipalId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("assigned_by_principal_id");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTime>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("modified_at");
+
+                    b.Property<long>("ModifiedByPrincipalId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("modified_by_principal_id");
+
+                    b.Property<long>("PrincipalId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("principal_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("uuidv7()");
+
+                    b.Property<long>("ResourceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("resource_id");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_resource_principal_bindings");
+
+                    b.HasIndex("AssignedByPrincipalId")
+                        .HasDatabaseName("ix_resource_principal_bindings_assigned_by_principal_id");
+
+                    b.HasIndex("ModifiedByPrincipalId")
+                        .HasDatabaseName("ix_resource_principal_bindings_modified_by_principal_id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_resource_principal_bindings_public_id");
+
+                    b.HasIndex("PrincipalId", "Kind", "ResourceId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_resource_principal_bindings_principal_id_kind_resource_id");
+
+                    b.HasIndex("ResourceId", "Kind", "PrincipalId")
+                        .HasDatabaseName("ix_resource_principal_bindings_resource_id_kind_principal_id");
+
+                    b.ToTable("resource_principal_bindings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_resource_principal_bindings_kind", "kind IN ('ViewResource', 'ApproveRequests')");
+                        });
                 });
 
             modelBuilder.Entity("Infrastructure.Persistence.Entities.AccessRequest", b =>
@@ -856,6 +998,26 @@ namespace Infrastructure.Persistence.Migrations
                     b.Navigation("ModifiedByPrincipal");
                 });
 
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.PamInstallation", b =>
+                {
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "BootstrapPrincipal")
+                        .WithMany()
+                        .HasForeignKey("BootstrapPrincipalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_pam_installation_principals_bootstrap_principal_id");
+
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "CompletedByPrincipal")
+                        .WithMany()
+                        .HasForeignKey("CompletedByPrincipalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_pam_installation_principals_completed_by_principal_id");
+
+                    b.Navigation("BootstrapPrincipal");
+
+                    b.Navigation("CompletedByPrincipal");
+                });
+
             modelBuilder.Entity("Infrastructure.Persistence.Entities.PamRole", b =>
                 {
                     b.HasOne("Infrastructure.Persistence.Entities.Principal", "CreatedByPrincipal")
@@ -910,6 +1072,45 @@ namespace Infrastructure.Persistence.Migrations
                     b.Navigation("Request");
                 });
 
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.ResourcePrincipalBinding", b =>
+                {
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "AssignedByPrincipal")
+                        .WithMany()
+                        .HasForeignKey("AssignedByPrincipalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_resource_principal_bindings_principals_assigned_by_principa");
+
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "ModifiedByPrincipal")
+                        .WithMany()
+                        .HasForeignKey("ModifiedByPrincipalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_resource_principal_bindings_principals_modified_by_principa");
+
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "Principal")
+                        .WithMany("ResourceBindings")
+                        .HasForeignKey("PrincipalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_resource_principal_bindings_principals_principal_id");
+
+                    b.HasOne("Infrastructure.Persistence.Entities.ManagedResource", "Resource")
+                        .WithMany("PrincipalBindings")
+                        .HasForeignKey("ResourceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_resource_principal_bindings_managed_resources_resource_id");
+
+                    b.Navigation("AssignedByPrincipal");
+
+                    b.Navigation("ModifiedByPrincipal");
+
+                    b.Navigation("Principal");
+
+                    b.Navigation("Resource");
+                });
+
             modelBuilder.Entity("Infrastructure.Persistence.Entities.Entitlement", b =>
                 {
                     b.Navigation("AccessRequests");
@@ -920,6 +1121,8 @@ namespace Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Infrastructure.Persistence.Entities.ManagedResource", b =>
                 {
                     b.Navigation("Entitlements");
+
+                    b.Navigation("PrincipalBindings");
                 });
 
             modelBuilder.Entity("Infrastructure.Persistence.Entities.PamRole", b =>
@@ -932,6 +1135,8 @@ namespace Infrastructure.Persistence.Migrations
                     b.Navigation("AccessRequests");
 
                     b.Navigation("EligibilityRules");
+
+                    b.Navigation("ResourceBindings");
 
                     b.Navigation("RoleAssignments");
                 });

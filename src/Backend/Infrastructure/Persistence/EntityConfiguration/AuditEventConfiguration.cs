@@ -26,6 +26,9 @@ public sealed class AuditEventConfiguration : IEntityTypeConfiguration<AuditEven
         builder.Property(e => e.Metadata).HasColumnType("jsonb");
 
         builder.HasIndex(e => e.PublicId).IsUnique();
+        builder.HasIndex(e => new { e.SubjectPrincipalId, e.Id })
+            .HasDatabaseName("ix_audit_events_last_account_disable")
+            .HasFilter("event_type = 'principal.disabled'");
 
         builder.HasOne<Principal>()
                .WithMany()

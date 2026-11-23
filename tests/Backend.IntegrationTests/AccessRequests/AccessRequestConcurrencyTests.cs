@@ -7,7 +7,7 @@ using static Backend.IntegrationTests.AccessRequests.AccessRequestTestData;
 
 namespace Backend.IntegrationTests.AccessRequests;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection1.Name)]
 public sealed class AccessRequestConcurrencyTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Fact]

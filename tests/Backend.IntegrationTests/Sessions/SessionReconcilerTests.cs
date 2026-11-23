@@ -6,6 +6,7 @@ using Backend.Tests.Support;
 using FakeItEasy;
 using Infrastructure.Authentication;
 using Infrastructure.Persistence;
+using Infrastructure.Persistence.Entities;
 using Infrastructure.Sessions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -15,9 +16,103 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Backend.IntegrationTests.Sessions;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection3.Name)]
 public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixture redis)
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Run_DisabledAccount_RevokesOnlyItsSessionsAtKnownOrDetectedTime(bool recordedAudit)
+    {
+        // Arrange
+        await using var test = await RecoveryContext.CreateAsync(postgres, redis);
+        string first = await test.StartAsync();
+        string second = await test.StartAsync();
+        long otherPrincipal = await test.AddEnabledPrincipalAsync();
+        string unaffected = await test.StartAsync(otherPrincipal);
+        var disabledAt = test.Clock.Now.AddMinutes(2);
+        await test.DisableAsync(recordedAudit ? disabledAt : null);
+        test.Clock.Now = test.Clock.Now.AddMinutes(8);
+        var expectedEnd = recordedAudit ? disabledAt : test.Clock.Now;
+
+        // Act
+        await test.RunAsync();
+
+        // Assert
+        await test.AssertEndAsync(first, "access_changed", expectedEnd);
+        await test.AssertEndAsync(second, "access_changed", expectedEnd);
+        Assert.Null(await test.Tickets.RetrieveAsync(first));
+        Assert.Null(await test.Tickets.RetrieveAsync(second));
+        Assert.NotNull(await test.Tickets.RetrieveAsync(unaffected));
+        string unaffectedHash = SessionIdentifier.Hash(unaffected);
+        Assert.Null(await test.Database.Context.AuthenticationSessionLedgers.Where(session => session.SessionIdHash == unaffectedHash)
+            .Select(session => session.EndedAt).SingleAsync());
+    }
+
+    [Fact]
+    public async Task Run_DisableAuditPredatesLatePublication_DoesNotEndBeforeSessionCreation()
+    {
+        // Arrange
+        await using var test = await RecoveryContext.CreateAsync(postgres, redis);
+        string id = await test.StartAsync();
+        var createdAt = test.Clock.Now;
+        await test.DisableAsync(createdAt.AddSeconds(-1));
+        test.Clock.Now = test.Clock.Now.AddMinutes(1);
+
+        // Act
+        await test.RunAsync();
+
+        // Assert
+        await test.AssertEndAsync(id, "access_changed", createdAt);
+        Assert.Null(await test.Tickets.RetrieveAsync(id));
+    }
+
+    [Fact]
+    public async Task Run_DisabledAccountWithPendingLogout_PreservesFirstCompletion()
+    {
+        // Arrange
+        await using var test = await RecoveryContext.CreateAsync(postgres, redis);
+        string id = await test.StartAsync();
+        var logoutAt = test.Clock.Now.AddMinutes(1);
+        await test.Tickets.EndAsync(new PendingSessionEnd(SessionIdentifier.Hash(id), logoutAt, "logout", "original-logout"));
+        await test.DisableAsync(test.Clock.Now.AddMinutes(2));
+        test.Clock.Now = test.Clock.Now.AddMinutes(3);
+
+        // Act
+        await test.RunAsync();
+
+        // Assert
+        await test.AssertEndAsync(id, "logout", logoutAt);
+    }
+
+    [Fact]
+    public async Task Run_DisabledAccountEndAuditRejected_RetainsRevocationAndOriginalTimeForRetry()
+    {
+        // Arrange
+        await using var test = await RecoveryContext.CreateAsync(postgres, redis);
+        string id = await test.StartAsync();
+        var disabledAt = test.Clock.Now.AddMinutes(2);
+        await test.DisableAsync(disabledAt);
+        test.Clock.Now = test.Clock.Now.AddMinutes(3);
+        await SessionTestHost.RejectLogoutAuditAsync(test.Database);
+        await test.RunAsync();
+        Assert.Null(await test.Tickets.RetrieveAsync(id));
+        var pending = (await test.Tickets.ObserveAsync(SessionIdentifier.Hash(id))).PendingEnd;
+        Assert.NotNull(pending);
+        Assert.Equal("access_changed", pending.Reason);
+        Assert.Equal(disabledAt, pending.EndedAt);
+        Assert.Null(await test.Database.Context.AuthenticationSessionLedgers.Select(session => session.EndedAt).SingleAsync());
+        await test.Database.Context.Database.ExecuteSqlRawAsync("ALTER TABLE audit_events DROP CONSTRAINT reject_session_end");
+        test.Clock.Now = test.Clock.Now.AddMinutes(5);
+
+        // Act
+        await test.RunAsync();
+
+        // Assert
+        await test.AssertEndAsync(id, "access_changed", disabledAt);
+        Assert.Null((await test.Tickets.ObserveAsync(SessionIdentifier.Hash(id))).PendingEnd);
+    }
+
     [Fact]
     public async Task Run_LiveRenewalWithStaleLedger_RepairsExpiryWithoutEndingSession()
     {
@@ -168,7 +263,8 @@ public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixtur
         // Assert
         Assert.Equal(position.ThroughId, next.ThroughId);
         Assert.True(next.AfterId > position.AfterId);
-        Assert.Equal(new SessionReconciliationPosition(), wrapped);
+        Assert.Equal(0, wrapped.AfterId);
+        Assert.Equal(0, wrapped.ThroughId);
         await test.AssertEndAsync(lost, "session_lost", test.Clock.Now);
         Assert.Equal(4, await test.Database.Context.AuthenticationSessionLedgers.CountAsync(s => s.EndedAt == null));
     }
@@ -181,7 +277,7 @@ public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixtur
         string id = await test.StartAsync();
         string hash = SessionIdentifier.Hash(id);
         await test.Tickets.EndAsync(new PendingSessionEnd(hash, test.Clock.Now, "logout", "first"));
-        var writer = new SessionLedgerWriter(test.Database.Context);
+        var writer = new SessionLedgerWriter(test.Database.Context, test.Clock);
         await writer.RecordEndedAsync(hash, test.Clock.Now, "logout", "first");
 
         // Act
@@ -201,10 +297,12 @@ public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixtur
         var tickets = A.Fake<ISessionTicketStore>();
         A.CallTo(() => tickets.ReadPendingEndsAsync(A<int>._, A<CancellationToken>._))
             .Returns(Array.Empty<PendingSessionEnd>());
+        A.CallTo(() => tickets.ReadLeasePageAsync(A<SessionLeasePosition>._, A<int>._, A<CancellationToken>._))
+            .Returns(new SessionLeasePage(Array.Empty<string>(), new()));
         A.CallTo(() => tickets.ObserveAsync(A<string>._))
             .ThrowsAsync(new StackExchange.Redis.RedisConnectionException(StackExchange.Redis.ConnectionFailureType.UnableToConnect, StackExchange.Redis.CommandFlags.None, "offline"));
         var reconciler = new SessionReconciler(test.Database.Context, tickets,
-            new SessionLedgerWriter(test.Database.Context), test.Clock, NullLogger<SessionReconciler>.Instance);
+            new SessionLedgerWriter(test.Database.Context, test.Clock), test.Clock, NullLogger<SessionReconciler>.Instance);
 
         // Act
         await Assert.ThrowsAsync<StackExchange.Redis.RedisConnectionException>(() => reconciler.RunAsync(new(), 10));
@@ -222,7 +320,7 @@ public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixtur
         await using var test = await RecoveryContext.CreateAsync(postgres, redis);
         var tickets = A.Fake<ISessionTicketStore>();
         var reconciler = new SessionReconciler(test.Database.Context, tickets,
-            new SessionLedgerWriter(test.Database.Context), test.Clock, NullLogger<SessionReconciler>.Instance);
+            new SessionLedgerWriter(test.Database.Context, test.Clock), test.Clock, NullLogger<SessionReconciler>.Instance);
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
@@ -249,9 +347,10 @@ public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixtur
             return new(database, services, clock, long.Parse(id, System.Globalization.CultureInfo.InvariantCulture));
         }
 
-        public async Task<string> StartAsync()
+        public async Task<string> StartAsync(long? forPrincipalId = null)
         {
-            var principal = await database.Context.Principals.SingleAsync(p => p.Id == principalId);
+            long targetId = forPrincipalId ?? principalId;
+            var principal = await database.Context.Principals.SingleAsync(p => p.Id == targetId);
             var identity = PamClaims.Create(new PrincipalIdentity(principal.Id, principal.PublicId,
                 principal.DisplayName, true, []), principal.Issuer, principal.Subject, null);
             var ticket = new AuthenticationTicket(identity, new AuthenticationProperties
@@ -262,11 +361,46 @@ public sealed class SessionReconcilerTests(PostgresFixture postgres, RedisFixtur
             return await services.GetRequiredService<ITicketStore>().StoreAsync(ticket);
         }
 
+        public async Task<long> AddEnabledPrincipalAsync()
+        {
+            var principal = Principal.CreateMapping("https://identity.example/realms/pam", "bob", "Bob", clock.Now);
+            database.Context.Principals.Add(principal);
+            await database.Context.SaveChangesAsync();
+            await database.Context.Principals.Where(value => value.Id == principal.Id)
+                .ExecuteUpdateAsync(update => update.SetProperty(value => value.IsEnabled, true));
+            return principal.Id;
+        }
+
+        public async Task DisableAsync(DateTimeOffset? recordedAt)
+        {
+            await database.Context.Principals.Where(principal => principal.Id == principalId)
+                .ExecuteUpdateAsync(update => update.SetProperty(principal => principal.IsEnabled, false));
+            if (recordedAt is not { } time)
+            {
+                return;
+            }
+            // Include an older event to prove the latest committed disable is selected.
+            foreach (var occurredAt in new[] { time.AddMinutes(-10), time })
+            {
+                database.Context.AuditEvents.Add(new AuditEvent
+                {
+                    EventType = "principal.disabled",
+                    SubjectPrincipalId = principalId,
+                    ActorKind = "system",
+                    OccurredAt = occurredAt.UtcDateTime,
+                    CorrelationId = "reviewed-external-disable",
+                    Source = "test.operator",
+                    Outcome = "success"
+                });
+            }
+            await database.Context.SaveChangesAsync();
+        }
+
         public async Task<SessionReconciliationPosition> RunAsync(SessionReconciliationPosition? position = null, int limit = 100)
         {
             await using var scope = services.CreateAsyncScope();
             var context = scope.ServiceProvider.GetRequiredService<PamDbContext>();
-            var reconciler = new SessionReconciler(context, Tickets, new SessionLedgerWriter(context), clock,
+            var reconciler = new SessionReconciler(context, Tickets, new SessionLedgerWriter(context, clock), clock,
                 NullLogger<SessionReconciler>.Instance);
             return await reconciler.RunAsync(position ?? new(), limit);
         }

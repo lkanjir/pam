@@ -10,12 +10,14 @@ public class PamDbContext : DbContext
     }
 
     public DbSet<Principal> Principals => Set<Principal>();
+    public DbSet<PamInstallation> PamInstallations => Set<PamInstallation>();
     public DbSet<AuthenticationSessionLedger> AuthenticationSessionLedgers => Set<AuthenticationSessionLedger>();
     public DbSet<PamRole> PamRoles => Set<PamRole>();
     public DbSet<PamRoleAssignment> PamRoleAssignments => Set<PamRoleAssignment>();
     public DbSet<ManagedResource> ManagedResources => Set<ManagedResource>();
     public DbSet<Entitlement> Entitlements => Set<Entitlement>();
     public DbSet<EligibilityRule> EligibilityRules => Set<EligibilityRule>();
+    public DbSet<ResourcePrincipalBinding> ResourcePrincipalBindings => Set<ResourcePrincipalBinding>();
     public DbSet<AccessRequest> AccessRequests => Set<AccessRequest>();
     public DbSet<PolicyEvaluation> PolicyEvaluations => Set<PolicyEvaluation>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();

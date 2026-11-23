@@ -9,7 +9,7 @@ namespace Api.Authentication;
 public static class PamClaims
 {
     public static ClaimsPrincipal Create(PrincipalIdentity principal, string issuer, string subject,
-        string? idpSessionId)
+        string? idpSessionId, DateTimeOffset? authenticatedAt = null)
     {
         var claims = new List<Claim>
         {
@@ -20,6 +20,15 @@ public static class PamClaims
             new(PamClaimTypes.Subject, subject)
         };
         claims.AddRange(principal.Roles.Select(role => new Claim(PamClaimTypes.Role, role)));
+        if (principal.IsBootstrap)
+        {
+            claims.Add(new Claim(PamClaimTypes.Bootstrap, "true", ClaimValueTypes.Boolean));
+        }
+        if (authenticatedAt is { } authenticationTime)
+        {
+            claims.Add(new Claim(PamClaimTypes.AuthenticationTime,
+                authenticationTime.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture), ClaimValueTypes.Integer64));
+        }
         if (!string.IsNullOrWhiteSpace(idpSessionId))
         {
             claims.Add(new Claim(PamClaimTypes.IdpSessionId, idpSessionId));
@@ -32,6 +41,11 @@ public static class PamClaims
     public static bool TryRead(ClaimsPrincipal principal, [NotNullWhen(true)] out PamUserIdentity? identity)
     {
         identity = null;
+        var bootstrap = principal.FindAll(PamClaimTypes.Bootstrap).Take(2).ToArray();
+        if (bootstrap.Length > 1 || (bootstrap.Length == 1 && bootstrap[0].Value != "true"))
+        {
+            return false;
+        }
         var issuer = principal.FindFirst(PamClaimTypes.Issuer)?.Value;
         var subject = principal.FindFirst(PamClaimTypes.Subject)?.Value;
         var name = principal.FindFirst(PamClaimTypes.DisplayName)?.Value;
@@ -45,7 +59,8 @@ public static class PamClaims
 
         identity = new PamUserIdentity(id, publicId, name, issuer, subject,
             principal.FindAll(PamClaimTypes.Role).Select(claim => claim.Value).ToArray(),
-            principal.FindFirst(PamClaimTypes.IdpSessionId)?.Value);
+            principal.FindFirst(PamClaimTypes.IdpSessionId)?.Value)
+        { IsBootstrap = bootstrap.Length == 1 };
         return true;
     }
 }

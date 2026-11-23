@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Application.AccessRequests;
+using Application.Authorization;
 using Application.Common.Pagination;
 using Application.Sessions;
+using Infrastructure.Authorization;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -105,13 +107,35 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
         // the row lock, so a concurrent identical submission observes the committed winner without retries
         // or provider-exception classification. The unique database index remains the final constraint.
         var principal = await dbContext.Principals
-            .FromSql($"SELECT * FROM principals WHERE id = {requester.Id} FOR UPDATE")
+            .FromSql($"SELECT *, xmin FROM principals WHERE id = {requester.Id} FOR UPDATE")
             .AsNoTracking()
+            .Where(value => !dbContext.PamInstallations.Any(installation => installation.BootstrapPrincipalId == value.Id))
             .SingleOrDefaultAsync(cancellationToken);
         if (principal is null || !principal.IsEnabled || principal.PublicId != requester.PublicId
             || principal.Issuer != requester.Issuer || principal.Subject != requester.Subject)
         {
             return new(AccessRequestSubmissionKind.Forbidden);
+        }
+
+        var allowedRoles = PamPermissionRoles.For(PamPermissions.RequestsCreate);
+        if (!await dbContext.PamRoleAssignments.AnyAsync(assignment => assignment.PrincipalId == requester.Id
+            && allowedRoles.Contains(assignment.Role.Code), cancellationToken))
+        {
+            return new(AccessRequestSubmissionKind.Forbidden);
+        }
+
+        if (normalized.ResourceId == Guid.Empty || normalized.EntitlementId == Guid.Empty)
+        {
+            var errors = new Dictionary<string, string[]>();
+            if (normalized.ResourceId == Guid.Empty)
+            {
+                errors[nameof(request.ResourceId)] = ["Select a resource."];
+            }
+            if (normalized.EntitlementId == Guid.Empty)
+            {
+                errors[nameof(request.EntitlementId)] = ["Select an entitlement."];
+            }
+            return new(AccessRequestSubmissionKind.Invalid) { Errors = errors };
         }
 
         var previous = await FindPreviousAsync(requester.Id, idempotencyKey, cancellationToken);
@@ -120,6 +144,18 @@ public sealed class AccessRequestService(PamDbContext dbContext, TimeProvider ti
             return AccessRequestFingerprint.IsMatch(previous.PayloadHash, payloadHash)
                 ? new(AccessRequestSubmissionKind.Replayed) { Request = previous.Response }
                 : new(AccessRequestSubmissionKind.Conflict);
+        }
+
+        // The principal lock fences scope/eligibility writers; the shared resource lock
+        // serializes retirement without upgrading a lock in the resource CRUD path.
+        var resource = await dbContext.ManagedResources.FromSql(
+            $"SELECT *, xmin FROM managed_resources WHERE public_id = {normalized.ResourceId} FOR SHARE")
+            .AsNoTracking().SingleOrDefaultAsync(cancellationToken);
+        if (resource is null || !resource.IsActive
+            || !await ResourceScopedAuthorization.RequesterResources(dbContext, requester.Id)
+                .AnyAsync(item => item.Id == resource.Id, cancellationToken))
+        {
+            return new(AccessRequestSubmissionKind.NotFound);
         }
 
         var entitlement = await dbContext.Entitlements

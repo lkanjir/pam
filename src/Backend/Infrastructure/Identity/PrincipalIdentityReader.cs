@@ -13,15 +13,19 @@ public sealed class PrincipalIdentityReader(PamDbContext dbContext) : IPrincipal
         var rows = await dbContext.Database.SqlQuery<PrincipalRoleRow>(
             $"""
                  WITH matched_principals  AS (
-                     SELECT id, public_id, display_name, is_enabled
-                     FROM principals
-                     WHERE issuer = {issuer} AND subject = {subject}
+                     SELECT p.id, p.public_id, p.display_name,
+                         p.is_enabled AND (i.completed_at IS NULL) AS is_enabled,
+                         i.bootstrap_principal_id IS NOT NULL AS is_bootstrap
+                     FROM principals p
+                     LEFT JOIN pam_installation i ON i.bootstrap_principal_id = p.id
+                     WHERE p.issuer = {issuer} AND p.subject = {subject}
                  )
                  SELECT 
                      p.id,
                      p.public_id,
                      p.display_name,
                      p.is_enabled,
+                     p.is_bootstrap,
                      r.code AS role_code
                  FROM matched_principals p
                  LEFT JOIN pam_role_assignments a ON a.principal_id = p.id
@@ -38,6 +42,7 @@ public sealed class PrincipalIdentityReader(PamDbContext dbContext) : IPrincipal
         var roles = rows.Select(row => row.RoleCode).OfType<string>().ToArray();
 
         return new PrincipalIdentity(principal.Id, principal.PublicId, principal.DisplayName, principal.IsEnabled,
-            roles);
+            roles)
+        { IsBootstrap = principal.IsBootstrap };
     }
 }

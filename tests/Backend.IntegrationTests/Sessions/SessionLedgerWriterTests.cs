@@ -1,9 +1,12 @@
+using System.Data.Common;
 using Application.Sessions;
 using Backend.IntegrationTests.Fixtures;
+using Backend.Tests.Support;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Entities;
 using Infrastructure.Sessions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Npgsql;
 
 namespace Backend.IntegrationTests.Sessions;
@@ -12,13 +15,85 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
 {
     private static readonly string[] SnapshotPropertyNames = ["displayName", "id", "issuer", "publicId", "subject"];
 
+    [Theory]
+    [InlineData(-1, true)]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    public async Task RecordStarted_ExpiryBoundary_PublishesOnlyBeforeDeadline(int seconds, bool allowed)
+    {
+        // Arrange
+        await using var database = await postgres.CreateDatabaseAsync();
+        var session = await CreateSessionAsync(database.Context);
+        var clock = new TestTimeProvider { Now = session.ExpectedExpiresAt.AddSeconds(seconds) };
+        var writer = new SessionLedgerWriter(database.Context, clock);
+
+        // Act
+        if (allowed)
+        {
+            await writer.RecordStartedAsync(session);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => writer.RecordStartedAsync(session));
+        }
+
+        // Assert
+        Assert.Equal(allowed ? 1 : 0, await database.Context.AuthenticationSessionLedgers.CountAsync());
+        Assert.Equal(allowed ? 1 : 0, await database.Context.AuditEvents.CountAsync(value => value.EventType == "authentication.session.started"));
+    }
+
+    [Fact]
+    public async Task RecordStarted_DeadlinePassesWhileWaitingForPublicationLock_RechecksAfterLock()
+    {
+        // Arrange
+        var entered = new PublicationLockObserver();
+        await using var database = await postgres.CreateDatabaseAsync(entered);
+        var session = await CreateSessionAsync(database.Context);
+        var clock = new TestTimeProvider { Now = session.CreatedAt };
+        await using var connection = new NpgsqlConnection(database.Context.Database.GetConnectionString());
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using (var command = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtextextended(@hash, 0))", connection, transaction))
+        {
+            command.Parameters.AddWithValue("hash", session.SessionIdHash);
+            await command.ExecuteNonQueryAsync();
+        }
+        var writer = new SessionLedgerWriter(database.Context, clock);
+
+        // Act
+        var publication = writer.RecordStartedAsync(session);
+        await entered.Started.Task.WaitAsync(TimeSpan.FromSeconds(20));
+        clock.Now = session.ExpectedExpiresAt;
+        await transaction.CommitAsync();
+
+        // Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(() => publication.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.False(await database.Context.AuthenticationSessionLedgers.AnyAsync());
+        Assert.False(await database.Context.AuditEvents.AnyAsync());
+    }
+
+    private sealed class PublicationLockObserver : DbCommandInterceptor
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("pg_advisory_xact_lock", StringComparison.Ordinal))
+            {
+                Started.TrySetResult();
+            }
+            return ValueTask.FromResult(result);
+        }
+    }
+
     [Fact]
     public async Task RecordStartedAsync_PersistsSessionLedger()
     {
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
 
         // Act
         await writer.RecordStartedAsync(session);
@@ -36,7 +111,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
 
         // Give SQL's current principal snapshot the same source values as the start event.
         await database.Context.Database.ExecuteSqlInterpolatedAsync(
@@ -75,7 +150,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         var session = await CreateSessionAsync(database.Context);
         await database.Context.Database.ExecuteSqlRawAsync(
             "ALTER TABLE audit_events ADD CONSTRAINT reject_test_event CHECK (event_type <> 'authentication.session.started')");
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
 
         // Act
         await Assert.ThrowsAsync<DbUpdateException>(() => writer.RecordStartedAsync(session));
@@ -93,7 +168,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         var session = await CreateSessionAsync(database.Context);
         await database.Context.Database.ExecuteSqlRawAsync(
             "ALTER TABLE authentication_session_ledger ADD CONSTRAINT reject_test_session CHECK (session_id_hash = 'never')");
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
 
         // Act
         await Assert.ThrowsAsync<DbUpdateException>(() => writer.RecordStartedAsync(session));
@@ -108,7 +183,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
         var expiry = session.ExpectedExpiresAt.AddMinutes(15);
 
@@ -126,7 +201,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
 
         // Act
@@ -143,7 +218,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
         await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout", "end-request");
 
@@ -160,7 +235,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
 
         // Act
@@ -181,7 +256,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
         await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1), "logout", "end-request");
 
@@ -199,7 +274,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
         await database.Context.Database.ExecuteSqlRawAsync(
             "ALTER TABLE audit_events ADD CONSTRAINT reject_session_end CHECK (event_type <> 'authentication.session.ended')");
@@ -224,7 +299,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
 
         // Act
@@ -243,7 +318,7 @@ public sealed class SessionLedgerWriterTests(PostgresFixture postgres) : IClassF
         // Arrange
         await using var database = await postgres.CreateDatabaseAsync();
         var session = await CreateSessionAsync(database.Context);
-        var writer = new SessionLedgerWriter(database.Context);
+        var writer = new SessionLedgerWriter(database.Context, new TestTimeProvider { Now = session.CreatedAt });
         await writer.RecordStartedAsync(session);
         await writer.RecordEndedAsync(session.SessionIdHash, session.CreatedAt.AddMinutes(1),
             "logout", "original-request");

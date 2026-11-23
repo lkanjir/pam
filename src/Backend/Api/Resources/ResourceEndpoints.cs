@@ -1,7 +1,10 @@
 using Api.Authentication;
+using Api.Authorization;
+using Application.Authorization;
 using Application.Common.Pagination;
 using Application.Resources;
 using Application.Sessions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,38 +19,91 @@ public static class ResourceEndpoints
         var resources = endpoints.MapGroup("/resources").WithTags("Resources");
 
         resources.MapGet("", List)
+            .WithName("Resource.List")
+            .WithMetadata(new PamConditionalPermissionMetadata(PamPermissions.ResourcesReadAll, PamPermissions.RequestsCreate, PamPermissions.ResourcesReadScoped))
             .WithSummary("List managed resources or the caller's requestable resources")
             .WithDescription("Set requestable=true to include only active resources with active entitlements "
-                + "enabled for the current user. Each item then includes the available entitlements and their "
-                + "duration, approval and ticket requirements. Uses limit and cursor pagination.")
+                + "enabled for the current user with an explicit active view binding. Each item then includes the available entitlements and their "
+                + "duration, approval and ticket requirements. The management list requires resources.read_all; requestable=true requires requests.create and resources.read_scoped. "
+                + "Uses limit and cursor pagination.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status400BadRequest);
+        resources.MapGet("/visible", ListVisible)
+            .WithName("Resource.ListVisible")
+            .WithSummary("List resources in the caller's explicit visibility scope")
+            .WithDescription("Requires resources.read_scoped. Filters current active view bindings or matching Approver authority before ascending public-ID pagination. "
+                + "Includes inactive resources with a view assignment, excludes retired resources and returns no entitlement eligibility or other users' assignments. "
+                + "A view does not grant target access. Limit defaults to 20, range 1–100. Administrative read_all does not imply this requester/approver scope.")
+            .RequireAuthorization(PamPermissions.ResourcesReadScoped)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+        resources.MapGet("/{id:guid}/entitlements", ListEntitlements)
+            .WithName("Resource.Entitlements.List")
+            .WithSummary("Inspect the configured entitlements of a managed resource")
+            .WithDescription("Requires resources.read_all for resource configuration. Includes inactive entitlements regardless of caller eligibility, "
+                + "with no access grant or eligibility change. Inactive resources remain inspectable; retired/missing resources return 404. "
+                + "Uses ascending entitlement public-ID pagination; limit defaults to 20, range 1–100.")
+            .RequireAuthorization(PamPermissions.ResourcesReadAll)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
         resources.MapGet("/{id:guid}", GetById).WithName(GetByIdRouteName)
-            .WithDescription("Returns a strong ETag identifying the resource version for conditional updates.");
-        resources.MapPost("", Create).ProducesValidationProblem();
+            .WithMetadata(new PamConditionalPermissionMetadata(PamPermissions.ResourcesReadAll, PamPermissions.ResourcesReadScoped))
+            .WithSummary("Read a resource through management or explicit scoped visibility")
+            .WithDescription("Requires resources.read_all, or resources.read_scoped with a current active view binding or matching Approver authority. "
+                + "Hidden, missing and retired resources are indistinguishable 404s for a scoped caller. "
+                + "Returns a strong resource ETag; visibility grants no write or target-access permission.")
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+        resources.MapPost("", Create).ProducesValidationProblem()
+            .RequireAuthorization(PamPermissions.ResourcesManage, PamPolicies.RecentAuthentication)
+            .WithName("Resource.Create")
+            .WithSummary("Create a managed resource")
+            .WithDescription("Requires resources.manage and original OIDC authentication within ten minutes. "
+                + "Creates the resource and its audit atomically; grants no target access or approval authority.")
+            .ProducesProblem(StatusCodes.Status403Forbidden);
         resources.MapPut("/{id:guid}", Update).WithResourceVersion().ProducesValidationProblem()
+            .RequireAuthorization(PamPermissions.ResourcesManage, PamPolicies.RecentAuthentication)
+            .WithName("Resource.Update")
+            .WithSummary("Update a managed resource")
             .WithDescription("Requires one strong resource ETag in If-Match. Missing preconditions return 428; "
                 + "a stale version or concurrent write returns 412 without changing the resource or its audit.")
             .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
         resources.MapDelete("/{id:guid}", Delete).WithResourceVersion()
+            .RequireAuthorization(PamPermissions.ResourcesManage, PamPolicies.RecentAuthentication)
+            .WithName("Resource.Delete")
+            .WithSummary("Retire a managed resource")
             .WithDescription("Requires one strong ETag in If-Match. Missing preconditions return 428; "
                 + "a stale version or concurrent write returns 412 without deleting or auditing the resource.")
             .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
 
         return endpoints;
     }
 
-    private static async Task<Results<Ok<CursorPage<ResourceResponse>>, UnauthorizedHttpResult>> List(
+    private static async Task<Results<Ok<CursorPage<ResourceResponse>>, UnauthorizedHttpResult, ForbidHttpResult>> List(
         [AsParameters] ResourceListQuery query,
         HttpContext context,
         IResourceService resourceService,
+        IAuthorizationService authorization,
         CancellationToken cancellationToken)
     {
         if (query.Requestable)
         {
+            if (!(await authorization.AuthorizeAsync(context.User, PamPermissions.RequestsCreate)).Succeeded
+                || !(await authorization.AuthorizeAsync(context.User, PamPermissions.ResourcesReadScoped)).Succeeded)
+            {
+                return TypedResults.Forbid();
+            }
+
             if (!PamClaims.TryRead(context.User, out var identity))
             {
                 return TypedResults.Unauthorized();
@@ -62,6 +118,11 @@ public static class ResourceEndpoints
             return TypedResults.Ok(requestablePage);
         }
 
+        if (!(await authorization.AuthorizeAsync(context.User, PamPermissions.ResourcesReadAll)).Succeeded)
+        {
+            return TypedResults.Forbid();
+        }
+
         var page = await resourceService.ListAsync(
             query.Limit,
             query.Cursor,
@@ -70,13 +131,48 @@ public static class ResourceEndpoints
         return TypedResults.Ok(page);
     }
 
-    private static async Task<Results<Ok<ResourceResponse>, NotFound>> GetById(
+    private static async Task<Results<Ok<CursorPage<ResourceResponse>>, UnauthorizedHttpResult>> ListVisible(
+        [AsParameters] VisibleResourceListQuery query, HttpContext context, IResourceService resourceService,
+        CancellationToken cancellationToken)
+    {
+        if (!PamClaims.TryRead(context.User, out var identity))
+        {
+            return TypedResults.Unauthorized();
+        }
+        return TypedResults.Ok(await resourceService.ListVisibleAsync(identity.Id, query.Limit, query.Cursor, cancellationToken));
+    }
+
+    private static async Task<Results<Ok<CursorPage<ManagedEntitlementResponse>>, NotFound>> ListEntitlements(Guid id,
+        [AsParameters] EntitlementListQuery query, IResourceService resourceService, CancellationToken cancellationToken)
+    {
+        var page = await resourceService.ListEntitlementsAsync(id, query.Limit, query.Cursor, cancellationToken);
+        return page is null ? TypedResults.NotFound() : TypedResults.Ok(page);
+    }
+
+    private static async Task<Results<Ok<ResourceResponse>, NotFound, UnauthorizedHttpResult, ForbidHttpResult>> GetById(
         Guid id,
         HttpContext context,
         IResourceService resourceService,
+        IAuthorizationService authorization,
         CancellationToken cancellationToken)
     {
-        var resource = await resourceService.GetByIdAsync(id, cancellationToken);
+        ResourceResponse? resource;
+        if ((await authorization.AuthorizeAsync(context.User, PamPermissions.ResourcesReadAll)).Succeeded)
+        {
+            resource = await resourceService.GetByIdAsync(id, cancellationToken);
+        }
+        else
+        {
+            if (!(await authorization.AuthorizeAsync(context.User, PamPermissions.ResourcesReadScoped)).Succeeded)
+            {
+                return TypedResults.Forbid();
+            }
+            if (!PamClaims.TryRead(context.User, out var identity))
+            {
+                return TypedResults.Unauthorized();
+            }
+            resource = await resourceService.GetScopedByIdAsync(id, identity.Id, cancellationToken);
+        }
         if (resource is not null)
         {
             context.Response.Headers.ETag = ResourceEtags.Format(resource.Version);
@@ -85,7 +181,7 @@ public static class ResourceEndpoints
         return resource is null ? TypedResults.NotFound() : TypedResults.Ok(resource);
     }
 
-    public static async Task<Results<CreatedAtRoute<ResourceResponse>, UnauthorizedHttpResult>> Create(
+    public static async Task<Results<CreatedAtRoute<ResourceResponse>, UnauthorizedHttpResult, ForbidHttpResult, ProblemHttpResult>> Create(
         CreateResourceRequest request,
         HttpContext context,
         IResourceService resourceService,
@@ -103,12 +199,24 @@ public static class ResourceEndpoints
             identity.Issuer,
             identity.Subject);
 
-        var resource = await resourceService.CreateAsync(
+        var result = await resourceService.CreateAsync(
             request,
-            actor,
+            new AdministrativeActor(actor, PamAuthenticationTime.Read(context.User)),
             context.TraceIdentifier,
             cancellationToken);
 
+        if (result.Kind == ResourceWriteKind.Forbidden)
+        {
+            return TypedResults.Forbid();
+        }
+        if (result.Kind == ResourceWriteKind.RecentAuthenticationRequired)
+        {
+            return TypedResults.Problem(statusCode: StatusCodes.Status403Forbidden,
+                title: "Recent authentication is required.",
+                extensions: new Dictionary<string, object?> { ["code"] = "recent_auth_required" });
+        }
+
+        var resource = result.Resource ?? throw new InvalidOperationException("Create returned no resource.");
         return TypedResults.CreatedAtRoute(
             resource,
             GetByIdRouteName,
@@ -143,10 +251,17 @@ public static class ResourceEndpoints
         var result = await resourceService.UpdateAsync(
             id,
             request,
-            actor,
+            new AdministrativeActor(actor, PamAuthenticationTime.Read(context.User)),
             context.TraceIdentifier,
             version,
             cancellationToken);
+
+        if (result.Kind is ResourceWriteKind.Forbidden or ResourceWriteKind.RecentAuthenticationRequired)
+        {
+            return TypedResults.Problem(statusCode: StatusCodes.Status403Forbidden,
+                extensions: result.Kind == ResourceWriteKind.RecentAuthenticationRequired
+                    ? new Dictionary<string, object?> { ["code"] = "recent_auth_required" } : null);
+        }
 
         if (result.Kind == ResourceWriteKind.Conflict)
         {
@@ -189,10 +304,17 @@ public static class ResourceEndpoints
 
         var result = await resourceService.DeleteAsync(
             id,
-            actor,
+            new AdministrativeActor(actor, PamAuthenticationTime.Read(context.User)),
             context.TraceIdentifier,
             version,
             cancellationToken);
+
+        if (result is ResourceWriteKind.Forbidden or ResourceWriteKind.RecentAuthenticationRequired)
+        {
+            return TypedResults.Problem(statusCode: StatusCodes.Status403Forbidden,
+                extensions: result == ResourceWriteKind.RecentAuthenticationRequired
+                    ? new Dictionary<string, object?> { ["code"] = "recent_auth_required" } : null);
+        }
 
         if (result == ResourceWriteKind.Conflict)
         {

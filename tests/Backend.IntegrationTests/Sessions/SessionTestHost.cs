@@ -21,9 +21,6 @@ using StackExchange.Redis;
 
 namespace Backend.IntegrationTests.Sessions;
 
-[CollectionDefinition("Cookie sessions")]
-public sealed class CookieSessionTestGroup : ICollectionFixture<PostgresFixture>, ICollectionFixture<RedisFixture>;
-
 internal static class SessionTestHost
 {
     public static async Task<WebApplication> CreateSessionServerAsync(
@@ -38,12 +35,15 @@ internal static class SessionTestHost
         // Replace only the external identity provider's sign-in entry point.
         app.MapGet("/login", async (HttpContext context) =>
         {
-            long id = long.Parse(principalId, System.Globalization.CultureInfo.InvariantCulture);
+            string selectedId = context.Request.Query["principal-id"].FirstOrDefault() ?? principalId;
+            long id = long.Parse(selectedId, System.Globalization.CultureInfo.InvariantCulture);
             var principal = await context.RequestServices.GetRequiredService<PamDbContext>().Principals
                 .AsNoTracking().SingleAsync(principal => principal.Id == id, context.RequestAborted);
-            var identity = PamClaims.Create(new PrincipalIdentity(
-                principal.Id, principal.PublicId, principal.DisplayName, principal.IsEnabled, []),
-                principal.Issuer, principal.Subject, "idp-session");
+            var current = await context.RequestServices.GetRequiredService<IPrincipalIdentityReader>()
+                .FindAsync(principal.Issuer, principal.Subject, context.RequestAborted)
+                ?? throw new InvalidOperationException("The test principal was not found.");
+            DateTimeOffset? authenticatedAt = context.Request.Query.ContainsKey("without-auth-time") ? null : clock.GetUtcNow();
+            var identity = PamClaims.Create(current, principal.Issuer, principal.Subject, "idp-session", authenticatedAt);
             var properties = new AuthenticationProperties
             {
                 IsPersistent = context.Request.Query["persistent"] == "True",
@@ -129,8 +129,19 @@ internal static class SessionTestHost
     {
         await using var scope = services.CreateAsyncScope();
         var context = CreateContext(scope.ServiceProvider);
-        var ticket = SessionTestData.Ticket(clock.GetUtcNow(), principalId);
-        await context.SignInAsync("Cookies", ticket.Principal, ticket.Properties);
+        long id = long.Parse(principalId, System.Globalization.CultureInfo.InvariantCulture);
+        var mapping = await scope.ServiceProvider.GetRequiredService<PamDbContext>().Principals.AsNoTracking()
+            .SingleAsync(principal => principal.Id == id);
+        var current = await scope.ServiceProvider.GetRequiredService<IPrincipalIdentityReader>()
+            .FindAsync(mapping.Issuer, mapping.Subject)
+            ?? throw new InvalidOperationException("The test principal was not found.");
+        var principal = PamClaims.Create(current, mapping.Issuer, mapping.Subject, "idp-session", clock.GetUtcNow());
+        var properties = new AuthenticationProperties
+        {
+            IssuedUtc = clock.GetUtcNow(),
+            ExpiresUtc = clock.GetUtcNow().AddMinutes(30)
+        };
+        await context.SignInAsync("Cookies", principal, properties);
         return context.Response.Headers.SetCookie
             .Single(value => value!.StartsWith("pam.session=", StringComparison.Ordinal))!.Split(';')[0];
     }
@@ -167,6 +178,26 @@ internal static class SessionTestHost
         var context = new DefaultHttpContext { RequestServices = services };
         context.Request.Scheme = "http";
         return context;
+    }
+
+    public static async Task AssignRolesAsync(TestDatabase database, long principalId, params string[] codes)
+    {
+        foreach (string code in codes)
+        {
+            var role = await database.Context.PamRoles.SingleOrDefaultAsync(role => role.Code == code);
+            if (role is null)
+            {
+                role = new PamRole { Code = code, CreatedByPrincipalId = principalId };
+                database.Context.PamRoles.Add(role);
+            }
+            database.Context.PamRoleAssignments.Add(new PamRoleAssignment
+            {
+                PrincipalId = principalId,
+                Role = role,
+                AssignedByPrincipalId = principalId
+            });
+        }
+        await database.Context.SaveChangesAsync();
     }
 
     public static async Task<string> SeedPrincipalAsync(TestDatabase database)

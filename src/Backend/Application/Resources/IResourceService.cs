@@ -1,29 +1,30 @@
+using Application.Authorization;
 using Application.Common.Pagination;
-using Application.Sessions;
 
 namespace Application.Resources;
 
 public interface IResourceService
 {
     Task<ResourceResponse?> GetByIdAsync(Guid publicId, CancellationToken cancellationToken = default);
+    Task<ResourceResponse?> GetScopedByIdAsync(Guid publicId, long principalId, CancellationToken cancellationToken = default);
 
-    Task<ResourceResponse> CreateAsync(
+    Task<ResourceWriteResult> CreateAsync(
         CreateResourceRequest request,
-        PrincipalSnapshot actor,
+        AdministrativeActor actor,
         string correlationId,
         CancellationToken cancellationToken = default);
 
     Task<ResourceWriteResult> UpdateAsync(
         Guid publicId,
         UpdateResourceRequest request,
-        PrincipalSnapshot actor,
+        AdministrativeActor actor,
         string correlationId,
         uint expectedVersion,
         CancellationToken cancellationToken = default);
 
     Task<ResourceWriteKind> DeleteAsync(
         Guid publicId,
-        PrincipalSnapshot actor,
+        AdministrativeActor actor,
         string correlationId,
         uint expectedVersion,
         CancellationToken cancellationToken = default);
@@ -31,6 +32,12 @@ public interface IResourceService
     Task<CursorPage<ResourceResponse>> ListAsync(
         int limit,
         ResourceCursor? cursor,
+        CancellationToken cancellationToken = default);
+
+    Task<CursorPage<ResourceResponse>> ListVisibleAsync(long principalId, int limit, ResourceCursor? cursor,
+        CancellationToken cancellationToken = default);
+
+    Task<CursorPage<ManagedEntitlementResponse>?> ListEntitlementsAsync(Guid resourceId, int limit, EntitlementCursor? cursor,
         CancellationToken cancellationToken = default);
 
     Task<CursorPage<ResourceResponse>> ListRequestableAsync(

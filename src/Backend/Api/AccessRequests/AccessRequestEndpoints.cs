@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Api.Authentication;
 using Application.AccessRequests;
+using Application.Authorization;
 using Application.Common.Pagination;
 using Application.Sessions;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -14,6 +15,8 @@ public static class AccessRequestEndpoints
     {
         var requests = endpoints.MapGroup("/access-requests").WithTags("Access requests");
         requests.MapGet("/mine", ListMine)
+            .RequireAuthorization(PamPermissions.RequestsReadOwn)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .WithName("AccessRequest.ListMine")
             .WithSummary("List the authenticated caller's access requests")
             .WithDescription("Returns only requests owned by the current PAM session, including denied requests "
@@ -23,6 +26,8 @@ public static class AccessRequestEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
         requests.MapGet("/{requestId:guid}", GetMine)
+            .RequireAuthorization(PamPermissions.RequestsReadOwn)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .WithName("AccessRequest.GetById")
             .WithSummary("Get an access request owned by the authenticated caller")
             .WithDescription("Returns the saved request and policy evaluation, current resource and entitlement "
@@ -32,9 +37,12 @@ public static class AccessRequestEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
         requests.MapPost("", Submit)
+            .RequireAuthorization(PamPermissions.RequestsCreate)
             .WithName("AccessRequest.Create")
             .WithSummary("Submit an access request and evaluate Sprint 1 eligibility")
-            .WithDescription("The requester comes from the PAM session. Resource and entitlement must be active "
+            .WithDescription("The requester comes from the PAM session. New submissions need an explicit active resource view binding; "
+                + "hidden, missing or retired resources return indistinguishable 404s. Owner idempotent replay remains stable after visibility removal. "
+                + "Resource and entitlement must be active "
                 + "and belong together. Duration must be within the entitlement maximum; justification is required "
                 + "(maximum 2000 characters), and a ticket is required when configured (maximum 100 characters). "
                 + "Provide one Idempotency-Key header of 1–128 printable non-whitespace ASCII characters. "
@@ -45,6 +53,7 @@ public static class AccessRequestEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
 
         return endpoints;
@@ -81,7 +90,7 @@ public static class AccessRequestEndpoints
     }
 
     private static async Task<Results<Created<AccessRequestResponse>, Ok<AccessRequestResponse>,
-        ValidationProblem, ProblemHttpResult, UnauthorizedHttpResult>> Submit(
+        ValidationProblem, ProblemHttpResult, UnauthorizedHttpResult, NotFound>> Submit(
         CreateAccessRequestRequest request,
         [FromHeader(Name = "Idempotency-Key"), Required, StringLength(128, MinimumLength = 1)] string? idempotencyKey,
         HttpContext context,
@@ -108,6 +117,11 @@ public static class AccessRequestEndpoints
             identity.Id, identity.PublicId, identity.DisplayName, identity.Issuer, identity.Subject);
         var result = await service.SubmitAsync(
             request, idempotencyKey, requester, context.TraceIdentifier, cancellationToken);
+
+        if (result.Kind == AccessRequestSubmissionKind.NotFound)
+        {
+            return TypedResults.NotFound();
+        }
 
         if (result.Kind == AccessRequestSubmissionKind.Invalid)
         {

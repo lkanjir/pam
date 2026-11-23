@@ -9,7 +9,8 @@ public enum AccessRequestSubmissionKind
     Replayed,
     Invalid,
     Conflict,
-    Forbidden
+    Forbidden,
+    NotFound
 }
 
 public sealed record AccessRequestSubmissionResult(AccessRequestSubmissionKind Kind)

@@ -10,7 +10,7 @@ using static Backend.IntegrationTests.AccessRequests.AccessRequestTestData;
 
 namespace Backend.IntegrationTests.AccessRequests;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection1.Name)]
 public sealed class OwnAccessRequestListTests(PostgresFixture postgres, RedisFixture redis)
 {
     private static readonly string[] PaginationParameters = ["Cursor", "Limit"];

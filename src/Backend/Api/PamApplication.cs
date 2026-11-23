@@ -1,7 +1,9 @@
 using Api.AccessRequests;
 using Api.Authentication;
+using Api.Authorization;
 using Api.Errors;
 using Api.Filters;
+using Api.Principals;
 using Api.Resources;
 using Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -19,6 +21,7 @@ public static class PamApplication
         services.AddInfrastructure(configuration);
         services.AddValidation();
         services.AddPamAuthentication(configuration, environment);
+        services.AddPamAuthorization();
         services.AddPamAntiforgery(environment);
         services.AddOpenApi();
         services.AddPamErrorHandling();
@@ -44,19 +47,25 @@ public static class PamApplication
         app.UseAuthentication();
         app.UseAuthorization();
 
-        app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+        app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
         app.MapHealthChecks(
             "/health/ready",
-            new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
+            new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") }).AllowAnonymous();
 
         var api = app.MapGroup("/api").RequireAuthorization().AddEndpointFilter<AntiforgeryFilter>();
         api.MapAuthenticationEndpoints();
         api.MapResourceEndpoints();
         api.MapAccessRequestEndpoints();
+        api.MapPrincipalEndpoints();
+        api.MapPrincipalRoleEndpoints();
+        api.MapResourceAccessEndpoints();
+        api.MapEligibilityEndpoints();
+        api.MapApprovalAuthorityEndpoints();
+        api.MapBootstrapEndpoints();
 
         if (app.Environment.IsDevelopment())
         {
-            app.MapOpenApi();
+            app.MapOpenApi().AllowAnonymous();
             app.UseSwaggerUI(options =>
             {
                 options.SwaggerEndpoint("/openapi/v1.json", "PAM API");

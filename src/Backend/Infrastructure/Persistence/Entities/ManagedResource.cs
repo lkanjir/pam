@@ -19,4 +19,5 @@ public sealed class ManagedResource
     public Principal CreatedByPrincipal { get; set; } = null!;
     public Principal ModifiedByPrincipal { get; set; } = null!;
     public ICollection<Entitlement> Entitlements { get; } = new List<Entitlement>();
+    public ICollection<ResourcePrincipalBinding> PrincipalBindings { get; } = new List<ResourcePrincipalBinding>();
 }

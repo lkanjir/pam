@@ -10,7 +10,7 @@ using static Backend.IntegrationTests.AccessRequests.AccessRequestTestData;
 
 namespace Backend.IntegrationTests.AccessRequests;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection2.Name)]
 public sealed class AccessRequestSubmissionTests(PostgresFixture postgres, RedisFixture redis)
 {
     private static readonly string[] DuplicateIdempotencyKeys = ["first-key", "second-key"];
@@ -168,7 +168,7 @@ public sealed class AccessRequestSubmissionTests(PostgresFixture postgres, Redis
     [InlineData("inactive-resource")]
     [InlineData("deleted-resource")]
     [InlineData("inactive-entitlement")]
-    public async Task Submit_UnavailableResourceOrEntitlement_ReturnsValidationErrorWithoutPersistence(string condition)
+    public async Task Submit_UnavailableResourceOrEntitlement_RejectsWithoutPersistence(string condition)
     {
         // Arrange
         await using var test = await ResourceTestContext.CreateAsync(postgres, redis.Connection);
@@ -188,6 +188,8 @@ public sealed class AccessRequestSubmissionTests(PostgresFixture postgres, Redis
                 other.EnsureSuccessStatusCode();
                 var resource = await other.Content.ReadFromJsonAsync<Application.Resources.ResourceResponse>();
                 Assert.NotNull(resource);
+                var stored = await test.Database.Context.ManagedResources.SingleAsync(value => value.PublicId == resource.Id);
+                test.AddViewBinding(stored);
                 request = request with { ResourceId = resource.Id };
             }
             else
@@ -209,10 +211,14 @@ public sealed class AccessRequestSubmissionTests(PostgresFixture postgres, Redis
         using var response = await PostAsync(test, request);
 
         // Assert
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        bool hiddenResource = condition is "unknown-resource" or "inactive-resource" or "deleted-resource";
+        Assert.Equal(hiddenResource ? HttpStatusCode.NotFound : HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.True(json.RootElement.GetProperty("errors").TryGetProperty("EntitlementId", out _));
+        if (!hiddenResource)
+        {
+            Assert.True(json.RootElement.GetProperty("errors").TryGetProperty("EntitlementId", out _));
+        }
         await AssertNoRequestsAsync(test);
     }
 

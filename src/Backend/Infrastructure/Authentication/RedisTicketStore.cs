@@ -24,7 +24,10 @@ public sealed class RedisTicketStore : ISessionTicketStore
         """;
     private const string EndScript = """
         local pending = redis.call('HGET', KEYS[3], ARGV[1])
-        if pending then return pending end
+        if pending then
+            if ARGV[3] == 'observed' then return false end
+            return pending
+        end
         local ticket = redis.call('GET', KEYS[1])
         local lease = redis.call('HGET', KEYS[2], ARGV[1])
         if ARGV[3] == 'observed' then
@@ -40,6 +43,12 @@ public sealed class RedisTicketStore : ISessionTicketStore
         redis.call('DEL', KEYS[1])
         redis.call('HDEL', KEYS[2], ARGV[1])
         return encoded
+        """;
+
+    private const string DiscardLeaseScript = """
+        if redis.call('EXISTS', KEYS[1]) == 1 or redis.call('HEXISTS', KEYS[3], ARGV[1]) == 1 then return 0 end
+        if redis.call('HGET', KEYS[2], ARGV[1]) ~= ARGV[2] then return 0 end
+        return redis.call('HDEL', KEYS[2], ARGV[1])
         """;
 
     public RedisTicketStore(IConnectionMultiplexer redis, IDataProtectionProvider dataProtectionProvider,
@@ -59,6 +68,7 @@ public sealed class RedisTicketStore : ISessionTicketStore
         {
             var sessionId = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
             var redisKey = GetRedisKey(sessionId);
+            ticket.Properties.Items[SessionTicketMetadata.SessionIdHash] = SessionIdentifier.Hash(sessionId);
             var payload = Protect(ticket, redisKey);
             var ttl = GetTimeToLive(ticket);
 
@@ -86,6 +96,7 @@ public sealed class RedisTicketStore : ISessionTicketStore
         }
 
         var redisKey = GetRedisKey(key);
+        ticket.Properties.Items[SessionTicketMetadata.SessionIdHash] = SessionIdentifier.Hash(key);
         var payload = Protect(ticket, redisKey);
         for (var attempt = 0; attempt < 8; attempt++)
         {
@@ -128,8 +139,14 @@ public sealed class RedisTicketStore : ISessionTicketStore
         var value = await _database.StringGetAsync(redisKey);
 
         var ticket = Unprotect(value, redisKey);
-        return ticket?.Properties.ExpiresUtc is { } expiresAt && expiresAt > _timeProvider.GetUtcNow()
-            ? ticket : null;
+        if (ticket?.Properties.ExpiresUtc is not { } expiresAt || expiresAt <= _timeProvider.GetUtcNow())
+        {
+            return null;
+        }
+
+        // Derive from the actual storage key, including legacy tickets; never trust a caller's metadata value.
+        ticket.Properties.Items[SessionTicketMetadata.SessionIdHash] = SessionIdentifier.Hash(key);
+        return ticket;
     }
 
     private AuthenticationTicket? Unprotect(RedisValue value, string redisKey)
@@ -246,6 +263,47 @@ public sealed class RedisTicketStore : ISessionTicketStore
         }
 
         return _database.HashDeleteAsync(_pendingEndsKey, sessionIdHash);
+    }
+
+    public async Task<SessionLeasePage> ReadLeasePageAsync(SessionLeasePosition position, int limit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, 1000);
+        ArgumentOutOfRangeException.ThrowIfNegative(position.PageOffset);
+        cancellationToken.ThrowIfCancellationRequested();
+        var entries = _database.HashScanAsync(_leasesKey, pageSize: 128, cursor: position.Cursor, pageOffset: position.PageOffset);
+        await using var enumerator = entries.GetAsyncEnumerator(cancellationToken);
+        var hashes = new List<string>();
+        while (hashes.Count < limit && await enumerator.MoveNextAsync())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string hash = enumerator.Current.Name.ToString();
+            if (!SessionIdentifier.IsValid(hash))
+            {
+                throw new InvalidOperationException("The session lease hash is invalid.");
+            }
+            hashes.Add(hash);
+        }
+        var scan = (IScanningCursor)enumerator;
+        var next = hashes.Count == limit ? new SessionLeasePosition(scan.Cursor, scan.PageOffset + 1) : new();
+        return new(hashes, next);
+    }
+
+    public async Task<bool> DiscardExpiredLeaseAsync(string sessionIdHash, SessionObservation expected)
+    {
+        if (!SessionIdentifier.IsValid(sessionIdHash))
+        {
+            throw new ArgumentException("A valid session hash is required.", nameof(sessionIdHash));
+        }
+        if (expected.HasTicket || expected.PendingEnd is not null || expected.LeaseVersion is null
+            || expected.LeaseExpiresAt is not { } expiry || expiry > _timeProvider.GetUtcNow())
+        {
+            return false;
+        }
+        var result = await _database.ScriptEvaluateAsync(DiscardLeaseScript,
+            [KeyPrefix + sessionIdHash, _leasesKey, _pendingEndsKey], [sessionIdHash, expected.LeaseVersion]);
+        return (int)result == 1;
     }
 
     private static PendingSessionEnd ReadEnd(string? json, string hash)

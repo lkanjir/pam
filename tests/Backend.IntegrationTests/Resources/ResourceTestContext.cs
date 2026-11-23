@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net.Http.Json;
 using Api.Authentication;
+using Application.Authorization;
 using Backend.IntegrationTests.Fixtures;
 using Backend.IntegrationTests.Sessions;
 using Backend.Tests.Support;
@@ -8,6 +9,7 @@ using Infrastructure.Persistence.Entities;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
 
 namespace Backend.IntegrationTests.Resources;
@@ -38,16 +40,21 @@ internal sealed class ResourceTestContext : IAsyncDisposable
     public long ActorId { get; }
     public ManagedResource Resource { get; }
     public HttpClient Client { get; }
+    public HttpClient CreateClient() => _application.GetTestClient();
+    public AsyncServiceScope CreateScope() => _application.Services.CreateAsyncScope();
     public string ResourceUrl => $"/api/resources/{Resource.PublicId}";
 
     public static async Task<ResourceTestContext> CreateAsync(
         PostgresFixture postgres,
         IConnectionMultiplexer redis,
-        Action<WebApplication>? configure = null)
+        Action<WebApplication>? configure = null,
+        string[]? roles = null)
     {
         var database = await postgres.CreateDatabaseAsync();
         var clock = new TestTimeProvider();
         string principalId = await SessionTestHost.SeedPrincipalAsync(database);
+        await SessionTestHost.AssignRolesAsync(database,
+            long.Parse(principalId, CultureInfo.InvariantCulture), roles ?? [PamRoleCodes.Admin, PamRoleCodes.User]);
         var creator = new Principal { Issuer = "test-issuer", Subject = "ivan" };
         var resource = new ManagedResource
         {
@@ -77,9 +84,32 @@ internal sealed class ResourceTestContext : IAsyncDisposable
             database, clock, long.Parse(principalId, CultureInfo.InvariantCulture), resource, application);
     }
 
-    public async Task AuthenticateAsync()
+    public ResourcePrincipalBinding AddViewBinding(ManagedResource resource, long? principalId = null)
     {
-        using var login = await Client.GetAsync("/login");
+        long targetId = principalId ?? ActorId;
+        var existing = resource.PrincipalBindings.SingleOrDefault(binding => binding.PrincipalId == targetId
+            && binding.Kind == ResourceBindingKind.ViewResource);
+        if (existing is not null)
+        {
+            return existing;
+        }
+        var binding = new ResourcePrincipalBinding
+        {
+            PrincipalId = targetId,
+            Resource = resource,
+            Kind = ResourceBindingKind.ViewResource,
+            AssignedByPrincipalId = ActorId,
+            ModifiedByPrincipalId = ActorId,
+            AssignedAt = Clock.Now.UtcDateTime,
+            ModifiedAt = Clock.Now.UtcDateTime
+        };
+        resource.PrincipalBindings.Add(binding);
+        return binding;
+    }
+
+    public async Task AuthenticateAsync(bool includeResourceVersion = true, bool includeAuthenticationTime = true)
+    {
+        using var login = await Client.GetAsync(includeAuthenticationTime ? "/login" : "/login?without-auth-time");
         login.EnsureSuccessStatusCode();
         SessionTestHost.UpdateCookie(Client, login);
         using var antiforgery = await Client.GetAsync("/api/auth/antiforgery");
@@ -87,7 +117,10 @@ internal sealed class ResourceTestContext : IAsyncDisposable
         SessionTestHost.UpdateCookie(Client, antiforgery);
         var tokens = await antiforgery.Content.ReadFromJsonAsync<AntiforgeryTokenResponse>();
         Client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", tokens!.RequestToken);
-        await RefreshVersionAsync();
+        if (includeResourceVersion)
+        {
+            await RefreshVersionAsync();
+        }
     }
 
     public async Task RefreshVersionAsync(string? url = null)

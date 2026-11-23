@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Application.Authorization;
 using Application.Resources;
 using Application.Sessions;
 using Backend.IntegrationTests.Fixtures;
@@ -12,7 +13,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Backend.IntegrationTests.Resources;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection4.Name)]
 public sealed class ResourceConcurrencyTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]
@@ -75,8 +76,10 @@ public sealed class ResourceConcurrencyTests(PostgresFixture postgres, RedisFixt
         var updateService = new ResourceService(updateContext, test.Clock);
 
         // Act
-        var deletion = deletionService.DeleteAsync(test.Resource.PublicId, actor, "delete", test.Resource.Version);
-        var update = updateService.UpdateAsync(test.Resource.PublicId, Payload("Changed"), actor, "update", test.Resource.Version);
+        var deletion = deletionService.DeleteAsync(test.Resource.PublicId,
+            new AdministrativeActor(actor, test.Clock.Now), "delete", test.Resource.Version);
+        var update = updateService.UpdateAsync(test.Resource.PublicId, Payload("Changed"),
+            new AdministrativeActor(actor, test.Clock.Now), "update", test.Resource.Version);
         await Task.WhenAll(deletion, update);
 
         // Assert
@@ -190,8 +193,8 @@ public sealed class ResourceConcurrencyTests(PostgresFixture postgres, RedisFixt
 
         // Act
         var results = await Task.WhenAll(
-            first.UpdateAsync(test.Resource.PublicId, rename, actor, "rename", test.Resource.Version),
-            second.UpdateAsync(test.Resource.PublicId, describe, actor, "describe", test.Resource.Version));
+            first.UpdateAsync(test.Resource.PublicId, rename, new AdministrativeActor(actor, test.Clock.Now), "rename", test.Resource.Version),
+            second.UpdateAsync(test.Resource.PublicId, describe, new AdministrativeActor(actor, test.Clock.Now), "describe", test.Resource.Version));
 
         // Assert
         var winner = Assert.Single(results, item => item.Kind == ResourceWriteKind.Succeeded);

@@ -7,7 +7,7 @@ using static Backend.IntegrationTests.Sessions.SessionTestHost;
 
 namespace Backend.IntegrationTests.Sessions;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection4.Name)]
 public sealed class CookieAccessTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Theory]
@@ -50,4 +50,41 @@ public sealed class CookieAccessTests(PostgresFixture postgres, RedisFixture red
         Assert.Equal("access_changed", await database.Context.AuthenticationSessionLedgers
             .Select(s => s.EndReason).SingleAsync());
     }
+
+    [Theory]
+    [InlineData("public-id")]
+    [InlineData("issuer")]
+    [InlineData("subject")]
+    public async Task Authenticate_CurrentIdentityMappingChanges_RevokesSessionBeforeRenewal(string changedField)
+    {
+        // Arrange
+        await using var database = await postgres.CreateDatabaseAsync();
+        var principalId = await SeedPrincipalAsync(database);
+        var clock = new TestTimeProvider();
+        await using var server = await CreateSessionServerAsync(database, clock, principalId, redis.Connection);
+        using var client = server.GetTestClient();
+        using var login = await client.GetAsync("/login");
+        login.EnsureSuccessStatusCode();
+        UpdateCookie(client, login);
+        string hash = await database.Context.AuthenticationSessionLedgers.Select(value => value.SessionIdHash).SingleAsync();
+        _ = changedField switch
+        {
+            "public-id" => await database.Context.Principals.ExecuteUpdateAsync(update => update.SetProperty(value => value.PublicId, Guid.NewGuid())),
+            "issuer" => await database.Context.Principals.ExecuteUpdateAsync(update => update.SetProperty(value => value.Issuer, "https://other.example/realms/pam")),
+            _ => await database.Context.Principals.ExecuteUpdateAsync(update => update.SetProperty(value => value.Subject, "other-person"))
+        };
+        clock.Now = clock.Now.AddMinutes(16);
+
+        // Act
+        using var response = await client.GetAsync("/api/me");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.False(await redis.Connection.GetDatabase().KeyExistsAsync("pam:session:" + hash));
+        var session = await database.Context.AuthenticationSessionLedgers.AsNoTracking().SingleAsync();
+        Assert.Equal("access_changed", session.EndReason);
+        Assert.Equal(clock.Now.UtcDateTime, session.EndedAt);
+        Assert.Equal(1, await database.Context.AuditEvents.CountAsync(value => value.EventType == "authentication.session.ended"));
+    }
+
 }

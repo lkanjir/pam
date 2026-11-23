@@ -10,7 +10,7 @@ using static Backend.IntegrationTests.Sessions.SessionTestHost;
 
 namespace Backend.IntegrationTests.Sessions;
 
-[Collection("Cookie sessions")]
+[Collection(StorageCollection2.Name)]
 public sealed class LogoutPipelineTests(PostgresFixture postgres, RedisFixture redis)
 {
     [Fact]

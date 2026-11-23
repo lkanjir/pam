@@ -1,5 +1,8 @@
+using Application.Authorization;
 using Application.Common.Diagnostics;
 using Application.Identity;
+using Infrastructure.Authentication;
+using Infrastructure.Sessions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Mvc;
@@ -9,7 +12,10 @@ namespace Api.Authentication;
 public sealed class PamOpenIdConnectEvents(
     IPrincipalIdentityReader principalReader,
     IProblemDetailsService problemDetails,
-    ILogger<PamOpenIdConnectEvents> logger) : OpenIdConnectEvents
+    ILogger<PamOpenIdConnectEvents> logger,
+    TimeProvider timeProvider,
+    ISessionTicketStore tickets,
+    SessionTerminator terminator) : OpenIdConnectEvents
 {
     private static readonly Action<ILogger, string?, string, string?, string, Exception?> LogLoginFailure =
         LoggerMessage.Define<string?, string, string?, string>(
@@ -35,6 +41,16 @@ public sealed class PamOpenIdConnectEvents(
             return;
         }
 
+        PamReauthentication.Binding? binding = null;
+        bool reauth = PamReauthentication.IsRequested(context.Properties);
+        if (reauth && (!PamReauthentication.TryRead(context.Properties, out binding) || binding is null
+            || binding.Issuer != issuer || binding.Subject != subject))
+        {
+            context.HandleResponse();
+            await WriteProblemAsync(context.HttpContext, StatusCodes.Status403Forbidden, "Reauthentication was not accepted.");
+            return;
+        }
+
         var principal = await principalReader.FindAsync(issuer, subject, context.HttpContext.RequestAborted);
         if (principal is null || !principal.IsEnabled)
         {
@@ -45,7 +61,49 @@ public sealed class PamOpenIdConnectEvents(
         }
 
         var idpSessionId = context.Principal?.FindFirst(PamClaimTypes.IdpSessionId)?.Value;
-        context.Principal = PamClaims.Create(principal, issuer, subject, idpSessionId);
+        var authenticatedAt = context.Principal is { } tokenPrincipal
+            ? PamAuthenticationTime.Read(tokenPrincipal, "auth_time") : null;
+        if (reauth && (binding is null || binding.PrincipalId != principal.PublicId
+            || !RecentAuthentication.IsSatisfied(authenticatedAt, timeProvider.GetUtcNow())))
+        {
+            context.HandleResponse();
+            await WriteProblemAsync(context.HttpContext, StatusCodes.Status403Forbidden, "Reauthentication was not accepted.");
+            return;
+        }
+
+        context.Principal = PamClaims.Create(principal, issuer, subject, idpSessionId, authenticatedAt);
+    }
+
+    public override async Task TicketReceived(TicketReceivedContext context)
+    {
+        if (!PamReauthentication.IsRequested(context.Properties))
+        {
+            return;
+        }
+
+        if (!PamReauthentication.TryRead(context.Properties, out var binding) || binding is null
+            || context.Principal is null || !PamClaims.TryRead(context.Principal, out var identity)
+            || identity.PublicId != binding.PrincipalId || identity.Issuer != binding.Issuer || identity.Subject != binding.Subject
+            || !RecentAuthentication.IsSatisfied(PamAuthenticationTime.Read(context.Principal), timeProvider.GetUtcNow()))
+        {
+            context.HandleResponse();
+            await WriteProblemAsync(context.HttpContext, StatusCodes.Status403Forbidden, "Reauthentication was not accepted.");
+            return;
+        }
+
+        // TicketReceived follows the framework's token, state and nonce validation.
+        // A conditional Redis close binds the successful replacement to this still-active original session.
+        context.HttpContext.RequestAborted.ThrowIfCancellationRequested();
+        var observed = await tickets.ObserveAsync(binding.SessionIdHash);
+        if (!await terminator.TryEndForReauthenticationAsync(binding.SessionIdHash, observed,
+            context.HttpContext.TraceIdentifier, context.HttpContext.RequestAborted))
+        {
+            context.HandleResponse();
+            await WriteProblemAsync(context.HttpContext, StatusCodes.Status403Forbidden, "The original session is no longer available.");
+            return;
+        }
+
+        PamReauthentication.Clear(context.Properties);
     }
 
     public override async Task AccessDenied(AccessDeniedContext context)

@@ -6,5 +6,6 @@ public sealed class PrincipalRoleRow
     public Guid PublicId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public bool IsEnabled { get; set; }
+    public bool IsBootstrap { get; set; }
     public string? RoleCode { get; set; }
 }

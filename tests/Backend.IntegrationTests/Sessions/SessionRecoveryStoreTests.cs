@@ -9,6 +9,51 @@ namespace Backend.IntegrationTests.Sessions;
 public sealed class SessionRecoveryStoreTests(RedisFixture redis) : IClassFixture<RedisFixture>
 {
     [Fact]
+    public async Task End_IdenticalConcurrentObservedIntents_OnlyOneCallerWins()
+    {
+        // Arrange
+        var clock = new TestTimeProvider();
+        var store = new RedisTicketStore(redis.Connection, new EphemeralDataProtectionProvider(), clock);
+        string id = await store.StoreAsync(SessionTestData.Ticket(clock.Now));
+        string hash = SessionIdentifier.Hash(id);
+        var observed = await store.ObserveAsync(hash);
+        var intent = new PendingSessionEnd(hash, clock.Now, "reauthentication", "shared-correlation");
+
+        // Act
+        var results = await Task.WhenAll(store.EndAsync(intent, observed), store.EndAsync(intent, observed));
+
+        // Assert
+        var winner = Assert.Single(results, result => result is not null);
+        Assert.Single(results, result => result is null);
+        Assert.Equal(intent with { ExpectedExpiresAt = clock.Now.AddMinutes(30) }, winner);
+        Assert.Null(await store.RetrieveAsync(id));
+        Assert.Equal(winner, (await store.ObserveAsync(hash)).PendingEnd);
+        await store.AcknowledgeEndAsync(hash);
+    }
+
+    [Fact]
+    public async Task End_LogoutWonAfterObservation_DoesNotReportSuccessfulReauthentication()
+    {
+        // Arrange
+        var clock = new TestTimeProvider();
+        var store = new RedisTicketStore(redis.Connection, new EphemeralDataProtectionProvider(), clock);
+        string id = await store.StoreAsync(SessionTestData.Ticket(clock.Now));
+        string hash = SessionIdentifier.Hash(id);
+        var observed = await store.ObserveAsync(hash);
+        var logout = await store.EndAsync(new PendingSessionEnd(hash, clock.Now, "logout", "shared-correlation"));
+        Assert.NotNull(logout);
+
+        // Act
+        var result = await store.EndAsync(new PendingSessionEnd(hash, clock.Now, "reauthentication", "shared-correlation"), observed);
+
+        // Assert
+        Assert.Null(result);
+        Assert.Equal(logout, (await store.ObserveAsync(hash)).PendingEnd);
+        Assert.Null(await store.RetrieveAsync(id));
+        await store.AcknowledgeEndAsync(hash);
+    }
+
+    [Fact]
     public async Task End_RepeatedIntent_RetainsOriginalReasonTimeAndCorrelationUntilAcknowledged()
     {
         // Arrange

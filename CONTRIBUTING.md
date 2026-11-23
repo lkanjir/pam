@@ -131,7 +131,14 @@ dependencies to become available. The interval is not a completion deadline: a
 full sweep depends on open-session count and batch size. Precise original end
 information survives only while the Redis recovery record survives. If Redis
 loses it before PostgreSQL commits, the accepted fallback is `session_lost` with
-the detection time. Recovery records deliberately have no TTL until acknowledged.
+the detection time. Published recovery records have no TTL until acknowledged.
+Each pass also resumes a bounded native Redis lease scan. An expired lease is
+discarded only when no ticket, pending end intent or PostgreSQL ledger exists.
+A shared PostgreSQL transaction advisory lock fences inspection against session
+publication; a delayed publisher rechecks expiry after acquiring the same lock
+and cannot publish an expired session after cleanup. Redis compare-and-delete
+preserves a lease changed after observation. Cleanup creates no session/end audit
+for a ticket that was never published.
 
 ## C# formatting
 
@@ -229,6 +236,15 @@ agents; the test skill documents an inline fallback when its named agent is abse
 Skills guide decisions. The formatter, analyzers and tests enforce what can be
 automated. Reviewers still assess design, authorization, data integrity and
 behavioral correctness.
+
+## Authorization design
+
+The shared [authorization design and delivery plan](design/authorization.md)
+defines explicit permission bundles, resource visibility and approval scopes,
+self-operation rules, transactional audit, recent authentication and bootstrap
+handover. It distinguishes planned behavior from the current API; use its slice
+sequence and acceptance matrix when implementing authorization. Local planning
+notes under `docs/` are ignored by Git and are not the shared design contract.
 
 ## Pull requests and merge policy
 
