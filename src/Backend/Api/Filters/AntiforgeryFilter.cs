@@ -13,7 +13,9 @@ public sealed class AntiforgeryFilter(IAntiforgery antiforgery) : IEndpointFilte
             || HttpMethods.IsHead(method)
             || HttpMethods.IsOptions(method)
             || HttpMethods.IsTrace(method))
+        {
             return await next(context);
+        }
 
         try
         {

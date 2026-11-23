@@ -40,7 +40,10 @@ internal sealed class ResourceTestContext : IAsyncDisposable
     public HttpClient Client { get; }
     public string ResourceUrl => $"/api/resources/{Resource.PublicId}";
 
-    public static async Task<ResourceTestContext> CreateAsync(PostgresFixture postgres, IConnectionMultiplexer redis)
+    public static async Task<ResourceTestContext> CreateAsync(
+        PostgresFixture postgres,
+        IConnectionMultiplexer redis,
+        Action<WebApplication>? configure = null)
     {
         var database = await postgres.CreateDatabaseAsync();
         var clock = new TestTimeProvider();
@@ -60,11 +63,15 @@ internal sealed class ResourceTestContext : IAsyncDisposable
         database.Context.ManagedResources.Add(resource);
         await database.Context.SaveChangesAsync();
         var application = await SessionTestHost.CreateSessionServerAsync(
-            database, clock, principalId, redis, app => app.Use(async (context, next) =>
+            database, clock, principalId, redis, app =>
             {
-                context.TraceIdentifier = CorrelationId;
-                await next(context);
-            }));
+                configure?.Invoke(app);
+                app.Use(async (context, next) =>
+                {
+                    context.TraceIdentifier = CorrelationId;
+                    await next(context);
+                });
+            });
 
         return new ResourceTestContext(
             database, clock, long.Parse(principalId, CultureInfo.InvariantCulture), resource, application);
@@ -80,6 +87,16 @@ internal sealed class ResourceTestContext : IAsyncDisposable
         SessionTestHost.UpdateCookie(Client, antiforgery);
         var tokens = await antiforgery.Content.ReadFromJsonAsync<AntiforgeryTokenResponse>();
         Client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", tokens!.RequestToken);
+        await RefreshVersionAsync();
+    }
+
+    public async Task RefreshVersionAsync(string? url = null)
+    {
+        using var response = await Client.GetAsync(url ?? ResourceUrl);
+        response.EnsureSuccessStatusCode();
+        Assert.NotNull(response.Headers.ETag);
+        Client.DefaultRequestHeaders.IfMatch.Clear();
+        Client.DefaultRequestHeaders.IfMatch.Add(response.Headers.ETag);
     }
 
     public Task<ManagedResource> ReadResourceAsync()

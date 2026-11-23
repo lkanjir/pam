@@ -1,7 +1,7 @@
 using Backend.Tests.Support;
+using FakeItEasy;
 using Infrastructure.Authentication;
 using Microsoft.AspNetCore.DataProtection;
-using FakeItEasy;
 using StackExchange.Redis;
 
 namespace Backend.UnitTests.Authentication;

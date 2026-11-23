@@ -1,3 +1,4 @@
+using Application.Sessions;
 using Microsoft.AspNetCore.Authentication;
 
 namespace Infrastructure.Authentication;
@@ -12,4 +13,9 @@ public interface ISessionTicketStore
     // Must never shorten expiry or recreate a removed session.
     Task<bool> TryRenewAsync(string key, AuthenticationTicket ticket);
     Task RemoveAsync(string key);
+    Task DiscardUnissuedAsync(string key);
+    Task<SessionObservation> ObserveAsync(string sessionIdHash);
+    Task<PendingSessionEnd?> EndAsync(PendingSessionEnd completion, SessionObservation? expected = null);
+    Task<IReadOnlyList<PendingSessionEnd>> ReadPendingEndsAsync(int limit, CancellationToken cancellationToken = default);
+    Task AcknowledgeEndAsync(string sessionIdHash);
 }

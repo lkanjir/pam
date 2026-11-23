@@ -22,6 +22,7 @@ public sealed class ResourceDeleteTests(PostgresFixture postgres, RedisFixture r
         await test.AuthenticateAsync();
         test.Resource.IsActive = initiallyActive;
         await test.Database.Context.SaveChangesAsync();
+        await test.RefreshVersionAsync();
         test.Clock.Now = test.Clock.Now.AddMinutes(5);
 
         // Act

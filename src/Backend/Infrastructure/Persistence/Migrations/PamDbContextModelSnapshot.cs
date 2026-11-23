@@ -71,6 +71,7 @@ namespace Infrastructure.Persistence.Migrations
                         .HasColumnName("requester_principal_id");
 
                     b.Property<string>("State")
+                        .IsConcurrencyToken()
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("state");
@@ -297,6 +298,10 @@ namespace Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_authentication_session_ledger");
 
+                    b.HasIndex("Id")
+                        .HasDatabaseName("ix_authentication_session_ledger_open_id")
+                        .HasFilter("ended_at IS NULL");
+
                     b.HasIndex("PrincipalId")
                         .HasDatabaseName("ix_authentication_session_ledger_principal_id");
 
@@ -486,6 +491,12 @@ namespace Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("resource_type");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id")
                         .HasName("pk_managed_resources");
@@ -725,19 +736,23 @@ namespace Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Infrastructure.Persistence.Entities.AccessRequest", b =>
                 {
-                    b.HasOne("Infrastructure.Persistence.Entities.Entitlement", null)
-                        .WithMany()
+                    b.HasOne("Infrastructure.Persistence.Entities.Entitlement", "Entitlement")
+                        .WithMany("AccessRequests")
                         .HasForeignKey("EntitlementId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_access_requests_entitlements_entitlement_id");
 
-                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
-                        .WithMany()
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "RequesterPrincipal")
+                        .WithMany("AccessRequests")
                         .HasForeignKey("RequesterPrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_access_requests_principals_requester_principal_id");
+
+                    b.Navigation("Entitlement");
+
+                    b.Navigation("RequesterPrincipal");
                 });
 
             modelBuilder.Entity("Infrastructure.Persistence.Entities.AuditEvent", b =>
@@ -754,7 +769,7 @@ namespace Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_audit_events_entitlements_entitlement_id");
 
-                    b.HasOne("Infrastructure.Persistence.Entities.AccessRequest", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.AccessRequest", "Request")
                         .WithMany()
                         .HasForeignKey("RequestId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -772,6 +787,8 @@ namespace Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_audit_events_principals_subject_principal_id");
 
+                    b.Navigation("Request");
+
                     b.Navigation("Resource");
                 });
 
@@ -787,90 +804,136 @@ namespace Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Infrastructure.Persistence.Entities.EligibilityRule", b =>
                 {
-                    b.HasOne("Infrastructure.Persistence.Entities.Entitlement", null)
-                        .WithMany()
+                    b.HasOne("Infrastructure.Persistence.Entities.Entitlement", "Entitlement")
+                        .WithMany("EligibilityRules")
                         .HasForeignKey("EntitlementId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_eligibility_rules_entitlements_entitlement_id");
 
-                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
-                        .WithMany()
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "Principal")
+                        .WithMany("EligibilityRules")
                         .HasForeignKey("PrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_eligibility_rules_principals_principal_id");
+
+                    b.Navigation("Entitlement");
+
+                    b.Navigation("Principal");
                 });
 
             modelBuilder.Entity("Infrastructure.Persistence.Entities.Entitlement", b =>
                 {
-                    b.HasOne("Infrastructure.Persistence.Entities.ManagedResource", null)
-                        .WithMany()
+                    b.HasOne("Infrastructure.Persistence.Entities.ManagedResource", "Resource")
+                        .WithMany("Entitlements")
                         .HasForeignKey("ResourceId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_entitlements_managed_resources_resource_id");
+
+                    b.Navigation("Resource");
                 });
 
             modelBuilder.Entity("Infrastructure.Persistence.Entities.ManagedResource", b =>
                 {
-                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "CreatedByPrincipal")
                         .WithMany()
                         .HasForeignKey("CreatedByPrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_managed_resources_principals_created_by_principal_id");
 
-                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "ModifiedByPrincipal")
                         .WithMany()
                         .HasForeignKey("ModifiedByPrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_managed_resources_principals_modified_by_principal_id");
+
+                    b.Navigation("CreatedByPrincipal");
+
+                    b.Navigation("ModifiedByPrincipal");
                 });
 
             modelBuilder.Entity("Infrastructure.Persistence.Entities.PamRole", b =>
                 {
-                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "CreatedByPrincipal")
                         .WithMany()
                         .HasForeignKey("CreatedByPrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_pam_roles_principals_created_by_principal_id");
+
+                    b.Navigation("CreatedByPrincipal");
                 });
 
             modelBuilder.Entity("Infrastructure.Persistence.Entities.PamRoleAssignment", b =>
                 {
-                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "AssignedByPrincipal")
                         .WithMany()
                         .HasForeignKey("AssignedByPrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_pam_role_assignments_principals_assigned_by_principal_id");
 
-                    b.HasOne("Infrastructure.Persistence.Entities.Principal", null)
-                        .WithMany()
+                    b.HasOne("Infrastructure.Persistence.Entities.Principal", "Principal")
+                        .WithMany("RoleAssignments")
                         .HasForeignKey("PrincipalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_pam_role_assignments_principals_principal_id");
 
-                    b.HasOne("Infrastructure.Persistence.Entities.PamRole", null)
-                        .WithMany()
+                    b.HasOne("Infrastructure.Persistence.Entities.PamRole", "Role")
+                        .WithMany("Assignments")
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_pam_role_assignments_pam_roles_role_id");
+
+                    b.Navigation("AssignedByPrincipal");
+
+                    b.Navigation("Principal");
+
+                    b.Navigation("Role");
                 });
 
             modelBuilder.Entity("Infrastructure.Persistence.Entities.PolicyEvaluation", b =>
                 {
-                    b.HasOne("Infrastructure.Persistence.Entities.AccessRequest", null)
+                    b.HasOne("Infrastructure.Persistence.Entities.AccessRequest", "Request")
                         .WithMany()
                         .HasForeignKey("RequestId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_policy_evaluations_access_requests_request_id");
+
+                    b.Navigation("Request");
+                });
+
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.Entitlement", b =>
+                {
+                    b.Navigation("AccessRequests");
+
+                    b.Navigation("EligibilityRules");
+                });
+
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.ManagedResource", b =>
+                {
+                    b.Navigation("Entitlements");
+                });
+
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.PamRole", b =>
+                {
+                    b.Navigation("Assignments");
+                });
+
+            modelBuilder.Entity("Infrastructure.Persistence.Entities.Principal", b =>
+                {
+                    b.Navigation("AccessRequests");
+
+                    b.Navigation("EligibilityRules");
+
+                    b.Navigation("RoleAssignments");
                 });
 #pragma warning restore 612, 618
         }

@@ -43,6 +43,7 @@ public sealed class ResourceReadTests(PostgresFixture postgres, RedisFixture red
         var ids = await SeedOrderedResourcesAsync(test);
         var first = await test.Client.GetFromJsonAsync<CursorPage<ResourceResponse>>("/api/resources?limit=1");
         Assert.NotNull(first);
+        await test.RefreshVersionAsync($"/api/resources/{ids[0]}");
         using var deletion = await test.Client.DeleteAsync($"/api/resources/{ids[0]}");
         deletion.EnsureSuccessStatusCode();
 

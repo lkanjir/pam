@@ -19,6 +19,8 @@ public sealed class AuthenticationSessionLedgerConfiguration : IEntityTypeConfig
 
         builder.HasIndex(e => e.PublicId).IsUnique();
         builder.HasIndex(e => e.SessionIdHash).IsUnique();
+        builder.HasIndex(e => e.Id).HasDatabaseName("ix_authentication_session_ledger_open_id")
+            .HasFilter("ended_at IS NULL");
 
         builder.HasOne<Principal>()
                .WithMany()

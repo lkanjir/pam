@@ -1,7 +1,13 @@
+using Application.AccessRequests;
+
 namespace Infrastructure.Persistence.Entities;
 
 public sealed class PolicyEvaluation
 {
+    private PolicyEvaluation() { }
+
+    public PolicyEvaluation(AccessRequestPolicyDecision decision) => Decision = decision.ToCode();
+
     public long Id { get; init; }
     public Guid PublicId { get; init; }
     public long RequestId { get; init; }
@@ -12,4 +18,6 @@ public sealed class PolicyEvaluation
     public string? Explanation { get; init; }
     public string? InputSnapshot { get; init; }
     public DateTime EvaluatedAt { get; init; }
+
+    public AccessRequest? Request { get; init; }
 }

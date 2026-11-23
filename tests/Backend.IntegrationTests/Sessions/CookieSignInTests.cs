@@ -1,10 +1,10 @@
+using System.Net;
 using Backend.IntegrationTests.Fixtures;
 using Backend.Tests.Support;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using System.Net;
 using static Backend.IntegrationTests.Sessions.SessionTestHost;
 
 namespace Backend.IntegrationTests.Sessions;
@@ -78,7 +78,8 @@ public sealed class CookieSignInTests(PostgresFixture postgres, RedisFixture red
         await context.SignInAsync("Cookies", ticket.Principal, ticket.Properties);
 
         // Assert
-        Assert.Contains(context.Response.Headers.SetCookie, value => value!.StartsWith("pam.session="));
+        Assert.Contains(context.Response.Headers.SetCookie,
+            value => value!.StartsWith("pam.session=", StringComparison.Ordinal));
     }
 
     [Fact]

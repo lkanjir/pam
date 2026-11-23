@@ -12,6 +12,9 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.Redis" />
     <ProjectReference Include="../../src/Backend/Api/Api.csproj" />
+    <ProjectReference Include="../../src/Backend/Migrator/Migrator.csproj" />
+    <None Include="../../deploy/postgres/01-create-app-user.sh"
+          Link="MigrationScripts/dev-bootstrap.sh" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../Shared/*.cs" Link="Support/%(Filename)%(Extension)" />
     <Using Include="Xunit" />
   </ItemGroup>

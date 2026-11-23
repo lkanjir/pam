@@ -69,8 +69,20 @@ remain for persistence failures and termination-feature cleanup within one conte
 Lifetime tests check acceptance at 7:59, rejection at 8:00, capped ledger expiry
 and Redis TTL, and rejection of legacy tickets without expiration metadata.
 
-Live Keycloak/browser flows and natural-expiration reconciliation remain
-outside the current coverage. No sleeps or Keycloak calls are needed.
+Live Keycloak/browser flows remain outside the current coverage. Session
+reconciliation uses real storage and deterministic clocks; no sleeps or Keycloak
+calls are needed.
+
+## Migration environments
+
+`DevelopmentMigratorTests` covers the Development guard, shared configuration,
+cancellation and credential-safe failures. `DevelopmentDatabaseTests` lets
+PostgreSQL run the actual dev bootstrap on initial container startup, then checks
+that the app role can migrate, manipulate schema and repeat the migration run.
+
+`ProductionDatabaseTests` applies EF-generated idempotent SQL twice as an admin
+without running the dev migrator, then checks the applied migration IDs. These
+tests use disposable databases, never the local Compose or production database.
 
 ## Absolute session lifetime
 
@@ -83,8 +95,9 @@ sign in again. A successful new OIDC sign-in can start a new lifetime, with a fr
 `reauthentication`; the new session and its identity receive a separate start audit. Keycloak SSO may make that sign-in
 silent; this is not a requirement to re-enter credentials every eight hours.
 
-Expiry enforcement does not itself write an expired-session audit or fill `EndedAt`.
-That remains separate work from enforcing access expiration.
+Expiry enforcement rejects the ticket immediately. The periodic session reconciler
+records `expired` and fills `EndedAt` at the retained lease deadline; if all Redis
+recovery data has disappeared, it records `session_lost` at detection time instead.
 
 ## Access changes
 
@@ -97,7 +110,8 @@ lookup failures fail the request instead of accepting stale authorization data.
 
 Redis renewal compares the expiration in the protected current ticket and uses an
 StackExchange.Redis conditional transaction (`Condition.StringEqual`) to atomically
-replace that exact payload and its TTL. There are no application-owned Lua scripts. Older/equal expirations are
+replace that exact payload, TTL and recovery lease. Separate small Lua scripts
+atomically observe tickets and seal end intents. Older/equal expirations are
 ignored; removal or expiration between the read and write cannot recreate a session.
 Contention is retried at most eight times, then leaves the winning ticket intact.
 The ledger is extended only after a successful Redis update. Regression tests cover
@@ -143,14 +157,19 @@ before the cookie `SigningOut` event. Call sites do not manipulate request featu
 
 The ticket-store adapter delegates explicit endings to the scoped
 `SessionTerminator.EndSessionAsync(sessionId, reason, correlationId)`. This operation
-can also be invoked without HTTP. It revokes storage first, then persists the end
+can also be invoked without HTTP. It atomically retains the first end intent while
+revoking the ticket, then persists the end
 with stable codes `logout`, `reauthentication` or `access_changed`. Storage failure
 propagates without an end audit; audit failure after revocation is logged and does
-not undo revocation or prevent cookie expiry. The caller correlation ID is required before revocation and is preserved in both
+not undo revocation or prevent cookie expiry. The retained end intent is retried by
+the session reconciler until ledger/audit persistence and acknowledgement succeed.
+The caller correlation ID is required before revocation and is preserved in both
 failure logs and the session-end audit, without generation in the persistence layer.
 
 Framework removal without explicit intent, and cleanup of an unissued session,
-remain storage-only operations. They do not record a user logout. Tests cover all
+remain storage-only operations. They do not record a user logout. Framework
+removal keeps the lease for later reconciliation; unissued cleanup discards it.
+Tests cover all
 three reason codes, operation ordering, storage/audit failures and isolation of the
 sign-out intent from later cleanup in the same request.
 
@@ -177,6 +196,127 @@ dependency on EF or Infrastructure.
 Moving the entity namespace does not change the database schema. The current EF
 model snapshot uses the new namespace; historical migration target models retain
 the original names. Integration tests apply the existing migrations to PostgreSQL.
+
+Core resource, entitlement, eligibility, access-request and role relationships have
+explicit navigation mappings alongside their existing FK properties. Navigation
+declarations do not enable lazy loading or automatic includes. Required references
+use `null!` for materialization; this does not mean the related entity was loaded.
+
+`EntityRelationshipsTests` checks graph inserts with generated keys, distinct role
+assignees/assigners, one-command navigation projections without tracked entities,
+tracked resource updates and history after resource soft deletion. The PostgreSQL
+fixture accepts command interceptors for measuring the actual query count.
+`EntityModelTests` compares the relational model with the last migration, guarding
+against accidental extra FK columns or other schema changes during this refactor.
+
+The required `Entitlement.Resource` relationship points to a filtered entity. EF
+warns about that combination: projecting or including the required resource can
+hide an entitlement when the resource is soft-deleted. Historical queries that
+need that resource use `IgnoreQueryFilters()` explicitly. No filter is propagated
+to requests, entitlements or audit history. Audit snapshots remain the historical
+source of truth; loading a current entity is optional and does not replace them.
+
+## Resource CRUD
+
+Resource endpoint tests use the production HTTP pipeline with real cookie sessions,
+antiforgery validation, PostgreSQL and Redis. A local test sign-in replaces the
+external identity provider, using the same infrastructure as the cookie tests.
+The actor has no special role and edits a target created by a different principal,
+matching the temporary policy that every authenticated user can manage all targets.
+
+PUT fully replaces editable fields and requires `IsActive` explicitly. An omitted
+description clears the previous value. Tests cover trimming, validation boundaries,
+missing required fields, malformed JSON, authentication/CSRF rejection, unavailable
+targets, actor/timestamp stamping and the audit snapshot. The 24 PUT cases passed
+before DELETE was implemented.
+
+DELETE sets `DeletedAt` and `ModifiedAt` to the same operation timestamp,
+`IsActive=false` and `ModifiedByPrincipalId` to the caller. Tests cover active and
+inactive targets, retained entitlements, audit snapshots, authentication/CSRF,
+missing targets and repeated deletion. A repeat returns 404 without a new audit.
+Deleted targets disappear from GET/list and cannot be restored through PUT.
+
+Resource changes and their `resource.created`, `resource.updated` or
+`resource.deleted` audit use one `SaveChangesAsync`. Check-constraint failures on
+the audit table verify rollback of creation, update and soft deletion. Snapshots
+include resource identity, editable fields, creation/modification actors and
+timestamps, and the deletion timestamp. Earlier snapshot fields retain their names.
+
+Read/create regressions exercise Location resolution, explicit/default active state,
+cursor pagination without overlap, a cursor whose last resource was deleted,
+invalid cursors/limits and authentication. These are HTTP/storage tests; unit tests
+do not mock EF query behavior. Concurrent writes use
+optimistic concurrency through strong resource ETags. PUT and DELETE require one
+canonical `If-Match` value: missing is 428, invalid is 400 and stale is 412.
+`ResourceConcurrencyTests` proves that concurrent losing writes, including no-op
+updates, cannot persist their audit event.
+
+## Requestable resources
+
+`RequestableResourceTests` exercises `GET /api/resources?requestable=true` through
+the production HTTP pipeline with PostgreSQL, Redis and real PAM cookie sessions.
+It verifies caller-specific enabled eligibility, active resources/entitlements,
+soft deletion, public identifiers and form constraints, empty results, filtering
+before cursor pagination, invalid query Problem Details and anonymous rejection.
+Management-list regressions verify that omitted/false `requestable` still returns
+inactive targets and omits `entitlements`. The OpenAPI test checks the boolean
+filter and entitlement response contract. Request-submission policy enforcement
+remains separate work.
+
+Verification on 2026-11-14: all **21 requestable-resource cases** passed in the
+focused run. `bash scripts/check.sh` then passed locked restore, formatting,
+analyzers, Release build (zero warnings/errors), **62 unit tests and 155
+integration tests**, with no failures or skips.
+
+## Own-request queries
+
+`OwnAccessRequestListTests` exercises `/api/access-requests/mine` through the
+real cookie pipeline, PostgreSQL and Redis. It checks session ownership before
+pagination, pending and denied summaries, empty pages, cursor continuation,
+default/minimum/maximum limits, invalid pagination, historical visibility after
+retirement, unauthenticated access and the generated OpenAPI contract. GET does
+not require an antiforgery token or write audit records.
+
+`OwnAccessRequestDetailTests` follows the submission's `Location` to
+`/api/access-requests/{requestId}` and checks pending/denied request data, the
+persisted policy result and the two initial audit summaries. Foreign and missing
+requests both return 404 Problem Details. Historical details remain readable
+after retirement and eligibility changes. Other requests' audit events, internal
+events, policy evidence and raw audit snapshots/metadata are not exposed. Tests
+also verify authentication and OpenAPI for the detail response.
+
+## Access-request submission
+
+`AccessRequestPolicyTests` checks duration boundaries, required/optional tickets,
+eligibility outcomes and validation before policy denial. Sprint 1 always queues
+eligible requests for manual approval.
+
+`AccessRequestSubmissionTests` uses production HTTP handlers, real PAM sessions,
+antiforgery, PostgreSQL and Redis. It covers request validation, normalized text,
+active resource/entitlement consistency, session-derived identity and server
+values, Denied/PendingApproval persistence, versioned policy evidence and linked
+audit snapshots. OpenAPI checks describe the required idempotency header,
+success/error status codes and public response schema; no `.http` files are used.
+
+`AccessRequestIdempotencyTests` covers normalization, changed-payload conflicts,
+independent requester keys, concurrent identical/conflicting submissions and
+replays after resource retirement or eligibility changes. Test middleware gates
+both concurrent HTTP requests before submission without sleeps. A retry after
+failure can reuse the key.
+
+`AccessRequestAtomicityTests` uses check constraints to force failures at request,
+policy and either audit insert, proving transaction rollback.
+
+The local `/login` test substitute now creates claims from the seeded principal's
+actual public identity through `PamClaims`, supporting realistic requester audit
+snapshots and multiple principals. The external identity provider remains
+substituted. Own-request GET endpoints are covered by the list/detail suites.
+
+Verification on 2026-11-14: the focused runs passed **12 policy unit tests and
+56 submission integration cases**. `bash scripts/check.sh` passed the complete
+gate with a warning-free Release build, **74 unit tests and 211 integration
+tests**, with zero failures or skips. The EF model check confirms that the new
+request navigations reuse existing foreign keys without a schema migration.
 
 ## Audit payload contract
 
@@ -219,3 +359,38 @@ logout-to-PostgreSQL audit path.
 Detailed request logging, response-ID headers and tracing remain deferred as recorded
 in the local project documentation. No production request-logging pipeline is implied
 by these tests.
+
+## Verification checkpoint — 2026-10-29
+
+After the EF navigation refactor, `dotnet test src/Backend/Backend.sln --no-build
+--no-restore -m:1` passed **62 unit tests and 84 integration tests**. The seven new
+tests cover the schema comparison and the persistence/navigation behaviors described
+above. No schema migration is required for these navigation and setter changes.
+
+After PUT, DELETE and resource CRUD regressions, the same full-suite command passed
+**62 unit tests and 134 integration tests**. The 50 new resource cases use real HTTP,
+cookies/antiforgery, PostgreSQL and Redis. PUT's 24 cases also passed separately
+before DELETE implementation. Build completed with no warnings or errors.
+
+## Session reconciliation
+
+`SessionRecoveryStoreTests` exercises atomic Redis end intents, immutable first
+reason/time/correlation, scoped pending queues, lease retention and stale
+observation rejection across renewal. The opaque ticket revision is compared as
+well as the lease, including legacy ticket writes that do not change a lease.
+
+`SessionReconcilerTests` uses actual PostgreSQL and Redis with deterministic clocks.
+It proves repair of stale renewal expiry, exact known expiry, full metadata loss
+before and after the stale database deadline, retry after audit rejection,
+concurrent replica completion, cleanup after a lost acknowledgement, and fair
+bounded keyset sweeps while new sessions arrive. Redis connection errors must
+leave ledgers open, and cancellation must stop work. Other HTTP fixtures disable
+the hosted worker to keep their state transitions under test control; direct
+reconciliation tests invoke production passes with a fresh scope each time.
+
+Verification on 2026-11-15 after the six backend review fixes:
+`bash scripts/check.sh` passed pinned skill verification, locked restore, formatting,
+analyzers and the warning-free Release build. **113 unit and 291 integration tests
+passed**, with zero failures or skips. The EF model matches its latest migration.
+The reviewed migration-range SQL export contains the open-session partial index
+and migration history entries, with no duplicate physical xmin column.

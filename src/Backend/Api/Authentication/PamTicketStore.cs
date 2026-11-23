@@ -1,3 +1,4 @@
+using Application.Common.Diagnostics;
 using Application.Sessions;
 using Infrastructure.Authentication;
 using Infrastructure.Sessions;
@@ -13,11 +14,24 @@ public sealed class PamTicketStore(
     PamSessionLifetime sessionLifetime,
     ILogger<PamTicketStore> logger) : ITicketStore
 {
+    private static readonly Action<ILogger, string, string?, string, Exception?> LogUnissuedSessionRemovalFailure =
+        LoggerMessage.Define<string, string?, string>(
+            LogLevel.Error,
+            new EventId(0),
+            "Failed to remove an unissued session. " +
+            "Error type: {ErrorType}; correlation: {CorrelationId}; location: {ErrorLocation}. " +
+            "The stored ticket will expire through its TTL.");
+
+    private static readonly Action<ILogger, string, string, string?, string, Exception?> LogRenewalFailure =
+        LoggerMessage.Define<string, string, string?, string>(LogLevel.Error, new EventId(0),
+            "Session renewal is retained in Redis; ledger reconciliation will retry. " +
+            "Session hash: {SessionIdHash}; error type: {ErrorType}; database code: {DatabaseCode}; location: {ErrorLocation}.");
+
     public Task<string> StoreAsync(AuthenticationTicket ticket) =>
         StoreCoreAsync(ticket, null, CancellationToken.None);
 
-    public Task<string> StoreAsync(AuthenticationTicket ticket, CancellationToken token) =>
-        StoreCoreAsync(ticket, null, token);
+    public Task<string> StoreAsync(AuthenticationTicket ticket, CancellationToken cancellationToken) =>
+        StoreCoreAsync(ticket, null, cancellationToken);
 
     public Task<string> StoreAsync(
         AuthenticationTicket ticket,
@@ -54,36 +68,55 @@ public sealed class PamTicketStore(
     {
         try
         {
-            await ticketStore.RemoveAsync(sessionId);
+            await ticketStore.DiscardUnissuedAsync(sessionId);
         }
         catch (Exception ex)
         {
-            logger.LogError("Failed to remove an unissued session. " +
-                            "Error type: {ErrorType}; correlation: {CorrelationId}. " +
-                            "The stored ticket will expire through its TTL.",
-                ex.GetType().Name,
-                correlationId);
+            var diagnostic = ExceptionDiagnostics.Capture(ex);
+            LogUnissuedSessionRemovalFailure(
+                logger,
+                diagnostic.ErrorType,
+                correlationId,
+                diagnostic.Location,
+                null);
         }
     }
 
     public Task RenewAsync(string key, AuthenticationTicket ticket) => RenewAsync(key, ticket, CancellationToken.None);
 
-    public async Task RenewAsync(string key, AuthenticationTicket ticket, CancellationToken token)
+    public async Task RenewAsync(string key, AuthenticationTicket ticket, CancellationToken cancellationToken)
     {
-        token.ThrowIfCancellationRequested();
+        cancellationToken.ThrowIfCancellationRequested();
         if (!sessionLifetime.TryLimitExpiration(ticket.Properties))
+        {
             return;
+        }
 
         await using var scope = scopeFactory.CreateAsyncScope();
         var ledgerWriter = scope.ServiceProvider.GetRequiredService<ISessionLedgerWriter>();
 
         var renewed = await ticketStore.TryRenewAsync(key, ticket);
         if (!renewed)
+        {
             return;
+        }
 
-        var expiresAt = ticket.Properties.ExpiresUtc!.Value;
-
-        await ledgerWriter.RecordRenewedAsync(SessionIdentifier.Hash(key), expiresAt, token);
+        var expiresAt = ticket.Properties.ExpiresUtc
+            ?? throw new InvalidOperationException("Renewed authentication ticket must have an expiration time.");
+        string hash = SessionIdentifier.Hash(key);
+        try
+        {
+            await ledgerWriter.RecordRenewedAsync(hash, expiresAt, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            var diagnostic = ExceptionDiagnostics.Capture(exception);
+            LogRenewalFailure(logger, hash, diagnostic.ErrorType, diagnostic.DatabaseCode, diagnostic.Location, null);
+        }
     }
 
     public async Task<AuthenticationTicket?> RetrieveAsync(string key)

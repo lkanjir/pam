@@ -1,10 +1,10 @@
+using System.Net;
 using Backend.IntegrationTests.Fixtures;
 using Backend.Tests.Support;
 using Infrastructure.Authentication;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using System.Net;
 using static Backend.IntegrationTests.Sessions.SessionTestHost;
 
 namespace Backend.IntegrationTests.Sessions;

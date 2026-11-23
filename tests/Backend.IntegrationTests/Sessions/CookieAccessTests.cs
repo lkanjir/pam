@@ -1,8 +1,8 @@
+using System.Net;
 using Backend.IntegrationTests.Fixtures;
 using Backend.Tests.Support;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
-using System.Net;
 using static Backend.IntegrationTests.Sessions.SessionTestHost;
 
 namespace Backend.IntegrationTests.Sessions;
@@ -35,7 +35,10 @@ public sealed class CookieAccessTests(PostgresFixture postgres, RedisFixture red
                 """);
         }
         else
+        {
             await database.Context.Database.ExecuteSqlRawAsync("UPDATE principals SET is_enabled = false");
+        }
+
         clock.Now = clock.Now.AddMinutes(16); // Also exercise a pending sliding renewal.
 
         // Act

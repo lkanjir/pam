@@ -143,67 +143,6 @@ services:
 
     restart: unless-stopped
 
-  migrator:
-    build:
-      context: ..
-      dockerfile: src/Backend/Dockerfile
-      target: migrator
-    environment:
-      DB_HOST: postgres
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      APP_DB_USER: ${APP_DB_USER}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: "no"
-
-  api:
-    build:
-      context: ..
-      dockerfile: src/Backend/Dockerfile
-      target: final
-
-    depends_on:
-      migrator:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-
-    environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      ASPNETCORE_HTTP_PORTS: "8080"
-      Database__ConnectionString: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${APP_DB_USER};Password=${APP_DB_PASSWORD};Pooling=true;SSL Mode=Disable"
-      Redis__Host: redis
-      Redis__Port: "6379"
-      Redis_User: default
-      Redis__Password: ${REDIS_PASSWORD}
-      Keycloak__ClientSecret: ${KEYCLOAK_CLIENT_SECRET}
-      Keycloak__MetadataAddress: "http://keycloak:8080/realms/pam/.well-known/openid-configuration"
-
-    ports:
-      - "127.0.0.1:${API_PORT:-8090}:8080"
-
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "--fail",
-          "--silent",
-          "--show-error",
-          "--max-time",
-          "3",
-          "http://127.0.0.1:8080/health/ready"
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
-    restart: unless-stopped
-
 volumes:
   postgres_data:
   keycloak_data:
